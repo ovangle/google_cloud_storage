@@ -4,7 +4,7 @@ packages:
   asn1lib:
     description: asn1lib
     source: hosted
-    version: "0.2.0"
+    version: "0.3.0"
   bignum:
     description: bignum
     source: hosted
@@ -12,7 +12,7 @@ packages:
   cipher:
     description: cipher
     source: hosted
-    version: "0.6.0"
+    version: "0.7.0"
   collection:
     description: collection
     source: hosted
@@ -36,7 +36,7 @@ packages:
   json_web_token:
     description: json_web_token
     source: hosted
-    version: "0.1.1"
+    version: "0.1.3"
   matcher:
     description: matcher
     source: hosted
@@ -44,7 +44,7 @@ packages:
   mock:
     description: mock
     source: hosted
-    version: "0.10.0"
+    version: "0.10.0+1"
   oauth2:
     description: oauth2
     source: hosted
@@ -60,12 +60,12 @@ packages:
   rsa_pkcs:
     description: rsa_pkcs
     source: hosted
-    version: "0.1.0"
+    version: "0.1.1"
   stack_trace:
     description: stack_trace
     source: hosted
-    version: "0.9.3"
+    version: "0.9.3+1"
   unittest:
     description: unittest
     source: hosted
-    version: "0.10.1+1"
+    version: "0.10.1+2"
