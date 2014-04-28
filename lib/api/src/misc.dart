@@ -287,7 +287,7 @@ class LoggingConfiguration extends JsonObject {
    * A prefix to apply to log objects.
    */
   String get logObjectPrefix => getField("logObjectPrefix");
-  set logObjectPrefix(String prefix) => setField("logObjectPrefix", logObjectPrefix);
+  set logObjectPrefix(String prefix) => setField("logObjectPrefix", prefix);
 
   LoggingConfiguration(): super({});
   LoggingConfiguration._(Map<String,dynamic> json, {String selector: "*"}): super(json, selector: selector);
@@ -325,7 +325,7 @@ class VersioningConfiguration extends JsonObject {
   bool get enabled => getField("enabled");
   set enabled(bool value) => setField("enabled", value);
 
-  VersioningConfiguration(bool enabled): super({'enabled':enabled});
+  VersioningConfiguration({bool enabled: false}): super({'enabled':enabled});
 
   VersioningConfiguration._delegate(JsonObject obj, var path, {String selector: "*"}):
     super.delegate(obj, path, selector: selector);
@@ -346,7 +346,11 @@ class WebsiteConfiguration extends JsonObject {
   String get notFoundPage => getField("notFoundPage");
   set notFoundPage(String value) => setField("notFoundPage", value);
 
-  WebsiteConfiguration._(Map<String,dynamic> json, {String selector: "*"}): super(json, selector: selector);
+  WebsiteConfiguration({String mainPageSuffix, String notFoundPage}):
+    this._({'mainPageSuffix': mainPageSuffix, 'notFoundPage': notFoundPage});
+
+  WebsiteConfiguration._(Map<String,dynamic> json, {String selector: "*"}):
+    super(json, selector: selector);
 
   WebsiteConfiguration._delegate(JsonObject obj, var path, {String selector: "*"}):
     super.delegate(obj, path, selector: selector);

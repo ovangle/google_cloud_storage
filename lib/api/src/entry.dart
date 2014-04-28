@@ -4,7 +4,10 @@ abstract class StorageEntry extends JsonObject {
   /**
    * Access controls on the entry.
    */
-  List<AccessControls> get acl;
+  List<BucketAccessControls> get acl =>
+      new JsonList<BucketAccessControls>(
+          this, "acl",
+          (path) => new BucketAccessControls._delegate(this, "acl"));
 
   /**
    * The name of the entry.
@@ -48,11 +51,6 @@ abstract class StorageEntry extends JsonObject {
  * Buckets contain [StorageObject]s which can be accessed by their own methods.
  */
 class StorageBucket extends StorageEntry {
-  @override
-  List<BucketAccessControls> get acl =>
-      new JsonList<BucketAccessControls>(
-          this, "acl",
-          (path) => new BucketAccessControls._delegate(this, "acl"));
 
   /**
    * The resource's [Cross-Origin Resource Sharing] configuration
@@ -87,6 +85,7 @@ class StorageBucket extends StorageEntry {
    * The [LoggingConfiguration] of the bucket.
    */
   LoggingConfiguration get logging => new LoggingConfiguration._delegate(this, "logging");
+  set logging(LoggingConfiguration logging) => setField("logging", logging);
 
   /**
    * The time the bucket was created.
@@ -123,9 +122,12 @@ class StorageBucket extends StorageEntry {
     this._({"name" : name}, selector: selector);
 
   StorageBucket._(Map<String,dynamic> json, {String selector}): super._(json, selector: selector);
+
+  String toString() => "StorageBucket ($name)";
 }
 
-abstract class StorageObject extends StorageEntry {
+class StorageObject extends StorageEntry {
+
   /**
    * The name of the bucket containing this [StorageObject]
    */
@@ -238,4 +240,6 @@ abstract class StorageObject extends StorageEntry {
   }
 
   StorageObject._(Map<String,dynamic> json, {String selector: "*"}): super._(json, selector: selector);
+
+  String toString() => "StorageObject ($bucket $name)";
 }
