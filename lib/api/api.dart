@@ -3,6 +3,8 @@ library google_cloud_storage.api;
 import 'dart:async';
 import 'dart:convert' show JSON, UTF8;
 import 'dart:io';
+import 'dart:math' as math;
+
 import 'package:http/http.dart' as http;
 import 'package:collection/wrappers.dart';
 
@@ -18,7 +20,9 @@ part 'src/misc.dart';
 
 const API_VERSION = 'v1beta2';
 
-const API_ENDPOINT = 'https://www.googleapis.com';
+const API_BASE_URL = 'https://www.googleapis.com';
+
+final _API_BASE = Uri.parse(API_BASE_URL);
 
 const API_SCOPES =
     const { PermissionRole.READER : 'https://www.googleapis.com/auth/devstorage.read_only',
@@ -29,6 +33,7 @@ const API_SCOPES =
 const _JSON_CONTENT = 'application/json; charset=UTF-8';
 const _MULTIPART_CONTENT = 'multipart/related; boundary=content_boundary';
 
+typedef Future<dynamic> _ResponseHandler(http.Response response, int maxRetries, [int currRetry]);
 
 //'\r\n'
 const _NEWLINE = const [0x0D, 0x0A];
@@ -47,6 +52,19 @@ const _MULTIPART_CONTENT_TERMINATOR =
             0x62, 0x6F, 0x75, 0x6E, 0x64, 0x61, 0x72, 0x79, 0x2D, 0x2D
           ];
 
+final _random = new math.Random();
+
+/**
+ * The Http status codes to use when retrying a request automatically
+ */
+const _RETRY_STATUS =
+      const [ HttpStatus.REQUEST_TIMEOUT,
+              HttpStatus.INTERNAL_SERVER_ERROR,
+              HttpStatus.BAD_GATEWAY,
+              HttpStatus.SERVICE_UNAVAILABLE,
+              HttpStatus.GATEWAY_TIMEOUT
+            ];
+
 
 Future _readPrivateKey(String path) {
   if (path == null)
@@ -54,8 +72,8 @@ Future _readPrivateKey(String path) {
   return new File(path).readAsString();
 }
 
-class Connection {
-  static Future<Connection> open(String projectNumber, String projectId, PermissionRole role,
+class CloudStorageConnection {
+  static Future<CloudStorageConnection> open(String projectNumber, String projectId, PermissionRole role,
       {String serviceAccount, String pathToPrivateKey}) {
     return _readPrivateKey(pathToPrivateKey).then((privateKey) {
       var scopes;
@@ -68,10 +86,10 @@ class Connection {
           iss: serviceAccount,
           privateKey: privateKey,
           scopes: scopes);
-      _sendAuthorisedRequest(http.Request request) =>
+      _sendAuthorisedRequest(http.BaseRequest request) =>
           console.withClient(
               (client) => client.send(request));
-      return new Connection._(projectId, role, _sendAuthorisedRequest);
+      return new CloudStorageConnection._(projectId, role, _sendAuthorisedRequest);
     });
   }
 
@@ -82,36 +100,65 @@ class Connection {
   final PermissionRole role;
   final _sendAuthorisedRequest;
 
-  Connection._(this.projectId, this.role, Future<http.StreamedResponse> this._sendAuthorisedRequest(http.Request request));
+  CloudStorageConnection._(this.projectId, this.role, Future<http.StreamedResponse> this._sendAuthorisedRequest(http.BaseRequest request));
 
   /**
    * Get the platform url to submit a request.
-   * - [:path:] is the path to the resource (eg. /b/<bucket>
-   * - [:query:] is the parameters to pass to the url.
-   * - [:apiBaseUrl:] The base url of the api endpoint
-   * - [:apiVersion:] The version of the API to call.
+   * - [:path:] is a urlencoded path to the API endpoint,
+   * specified relative to `https://www.googleapis.com/storage/v1beta2`
+   * - [:query:] is a _Query object which specifies the parameters
+   * to the api endpoint.
    *
    * Returns the API endpoint url.
    */
-  Uri platformUrl(String path,{ Map<String,String> query }) =>
-      Uri.parse("$API_ENDPOINT/storage/${API_VERSION}${path}?${query}");
-
-  Uri platformUploadUrl(String path, {Map<String,String> query}) =>
-      Uri.parse("$API_ENDPOINT/upload/storage/${API_VERSION}${path}?${query}");
+  Uri _platformUrl(String path,{ _Query query }) =>
+      Uri.parse("$API_BASE_URL/storage/${API_VERSION}${path}?${query}");
 
   /**
-   * Submits a `JSON` RPC call to the cloud storage service.
+   * Gets the platform url to submit an upload request.
+   * - [:path:] is a urlencoded path to the API endpoint,
+   * specified relative to `https://www.googleapis.com/upload/storage/v1beta2`
+   * - [:query:] is a [_Query] object which specifies parameters
+   * to pass to the API endpoint.
+   *
+   * Returns the API endpoint url.
    */
-  Future<Map<String,dynamic>> _sendJsonRpc(
+  Uri platformUploadUrl(String path, { _Query query}) =>
+      Uri.parse("$API_BASE_URL/upload/storage/${API_VERSION}${path}?${query}");
+
+  /**
+   * Submits a remote procedure call against one of the google cloud storage API endpoints.
+   *
+   * - [:path:] is a urlencoded path to the request endpoint,
+   * specified relative to `https://www.googleapis.com/storage/v1beta2`
+   * - [:query:] is a [_Query] object containing parameters to pass to the remote procedure
+   * call.
+   * - [:handler:] is a [_ResponseHandler] to pass the
+   * - [:body:] is the body of the request, which must be to a JSON encodable object.
+   * - [:maxRetries:] is the maximum number of attempts to submit the server (with exponential
+   * backoff) before failing the request when the cloud storage server returns any of the
+   * responses:
+   *   - request timeout
+   *   - internal server error
+   *   - bad gatway
+   *   - service unavailable
+   *   - gateway timeout
+   *
+   */
+  Future<dynamic> _sendJsonRpc(
       String path,
+
       { String method: "GET",
+        _ResponseHandler handler,
         _Query query,
-        Map<String,dynamic> body
+        var body,
+        int maxRetries: 0
       }) {
+    if (handler == null) handler = _handleJsonResponse;
     assert(query != null);
     print(query);
 
-    var url = platformUrl(path, query: query);
+    var url = _platformUrl(path, query: query);
     http.Request request = new http.Request(method, url);
 
     if (!["GET", "DELETE"].contains(method)) {
@@ -120,33 +167,88 @@ class Connection {
     }
     return _sendAuthorisedRequest(request)
         .then(http.Response.fromStream)
-        .then(_handleJsonResponse);
-  }
-
-  Map<String,dynamic> _handleJsonResponse(http.Response response) {
-    var method = response.request.method;
-    var url = response.request.url;
-    if (response.statusCode < 200 || response.statusCode >= 300)
-      throw new RPCException.invalidStatus(response, method, url);
-    if (response.statusCode == HttpStatus.NO_CONTENT) {
-      assert(method == "DELETE");
-      return null;
-    }
-    var contentType = ContentType.parse(response.headers[HttpHeaders.CONTENT_TYPE]);
-
-    if (contentType.primaryType != 'application' || contentType.subType != 'json')
-      throw new RPCException.expectedJSON(response, method, url);
-    return JSON.decode(response.body);
+        .then((response) => handler(response, maxRetries));
   }
 
   /**
+   * A response handler for any google cloud storage request which returns a JSON encoded response.
+   * Checks the response body
+   */
+  Future<Map<String,dynamic>> _handleJsonResponse(http.Response response, int maxRetries, [int retry=0]) =>
+      _handleResponse(response, maxRetries, retry)
+      .then((result) {
+          if (response.statusCode == HttpStatus.NO_CONTENT) {
+            assert(response.request.method == "DELETE");
+            return null;
+          }
+
+          var contentType = ContentType.parse(response.headers[HttpHeaders.CONTENT_TYPE]);
+
+          if (contentType.primaryType != 'application' || contentType.subType != 'json')
+            throw new RPCException.expectedJSON(response);
+
+          return JSON.decode(response.body);
+        });
+
+  Future<dynamic> _handleResponse(http.Response response, int maxRetries, [int retry=0]) {
+    //Resend the remote procedure call, with a delay calculated as ( 2^retry seconds + <random> microseconds )
+    Future<dynamic> _resendRpcWithDelay() {
+      Duration retryDuration = new Duration(seconds: math.pow(2, retry), milliseconds: _random.nextInt(1000));
+      return new Future.delayed((retryDuration), () {
+        _sendAuthorisedRequest(response.request)
+            .then(http.Response.fromStream)
+            .then((response) => _handleResponse(response, maxRetries, retry + 1));
+      });
+    }
+
+    if (_RETRY_STATUS.contains(response.statusCode) &&
+        retry < maxRetries) {
+      return _resendRpcWithDelay();
+    }
+
+    return new Future.sync(() {
+      if (response.statusCode < 200 || response.statusCode >= 300)
+        throw new RPCException.invalidStatus(response);
+
+
+      return response.body;
+    });
+  }
+
+
+
+
+  /**
+   * Submit the json remote procedure call, which returns paged results
+   * with paths:
+   *
+   * - *nextPageToken* A token representing the next page in the result set
+   * - *prefixes* An (optional) list of initial portions of object resource names
+   * - *items* A list of json resources.
+   *
+   * Returns a [Stream] of [Either] object, where all prefixes are emitted as left values
+   * and resources are submitted as right values.
+   *
+   * [:path:] is the path to the request endpoint, specified relative to the google
+   * storage api base url
+   * [:query:] is a [_Query] object containing parameters to pass to the remote procedure
+   * call.
+   * [:body:] is the body of the request.
+   * [:maxTries:] is the maximum number of retries to submit against the server *when
+   * fetching each page*, if the server returns any of the statuses
+   *   - request timeout
+   *   - internal server error
+   *   - bad gatway
+   *   - service unavailable
+   *   - gateway timeout
    *
    */
   Stream<Either<String,Map<String,dynamic>>> _streamJsonRpc(
       String path,
       { String method: "GET",
-        Map<String,dynamic> query,
-        Map<String,dynamic> body
+        _Query query,
+        Map<String,dynamic> body,
+        int maxRetries: 0
       }) {
     StreamController<Either<String,Map<String,dynamic>>> controller = new StreamController();
     assert(query['fields'] != null);
@@ -163,10 +265,12 @@ class Connection {
       var pageQuery = new _Query.from(query)
           ..['pageToken'] = nextPageToken;
 
-      return _sendJsonRpc(path,
+      return _sendJsonRpc(
+          path,
           method: method,
           query: pageQuery,
-          body: body)
+          body: body,
+          maxRetries: maxRetries)
       .then((response) {
         var items = (response['items'] != null) ? response['items'] : [];
         for (var item in items) {
@@ -200,16 +304,17 @@ class Connection {
       { String selector: "*",
         String projection: 'noAcl',
         int ifMetagenerationMatch,
-        int ifMetagenerationNotMatch}) {
+        int ifMetagenerationNotMatch,
+        int maxRetries: 0}) {
     return new Future.sync(() =>
         new _Query(projectId)
-            ..['ifMetagenerationMatch'] = ifMetagenerationMatch
-            ..['ifMetagenerationNotMatch'] =ifMetagenerationNotMatch
-            ..['projection'] = projection
-            ..['fields'] = selector
-      )
-      .then((query) => _sendJsonRpc("/b/$bucket", method: "GET", query:query))
-      .then((response) => new StorageBucket._(response, selector: selector));
+          ..['ifMetagenerationMatch'] = ifMetagenerationMatch
+          ..['ifMetagenerationNotMatch'] =ifMetagenerationNotMatch
+          ..['projection'] = projection
+          ..['fields'] = selector
+    )
+    .then((query) => _sendJsonRpc("/b/$bucket", method: "GET", query:query, maxRetries: maxRetries))
+    .then((response) => new StorageBucket._(response, selector: selector));
   }
 
   Stream<StorageBucket> listBuckets(
@@ -224,27 +329,30 @@ class Connection {
     } catch (e) {
       return new Stream.fromFuture(new Future.error(e));
     }
-    return _streamJsonRpc("/b",method: "GET",query: query)
+    return _streamJsonRpc("/b",method: "GET",query: query, maxRetries: 1)
         .map((response) => new StorageBucket._(response.right, selector: selector));
   }
 
   Future<StorageBucket> createBucket(
       var /* String | StorageBucket */ bucket,
       { String projection: 'noAcl',
-        String selector: "*"}) {
+        String selector: "*",
+        int maxRetries: 0}) {
     return new Future.sync(() {
       var selector;
       if (bucket is String) {
+        _checkValidBucketName(bucket);
         bucket = {'name' : bucket};
         selector = '*';
       } else if (bucket is! StorageBucket) {
+        _checkValidBucketName(bucket.name);
         throw new ArgumentError('Expected String or StorageBucket: $bucket');
       }
       return new _Query(projectId)
           ..['projection'] = projection
           ..['fields'] = selector;
     })
-    .then((query) => _sendJsonRpc("/b", method: "POST", query: query, body: bucket.toJson()))
+    .then((query) => _sendJsonRpc("/b", method: "POST", query: query, body: bucket, maxRetries: maxRetries))
     .then((response) => new StorageBucket._(response, selector: selector));
   }
 
@@ -300,11 +408,11 @@ class Connection {
    */
   Future<StorageBucket> updateBucket(
       String name,
-      String readSelector,
-      StorageBucket modify(StorageBucket bucket),
+      void modify(StorageBucket bucket),
       { int ifMetagenerationMatch,
         int ifMetagenerationNotMatch,
         String projection,
+        String readSelector: "*",
         String resultSelector: "*"}) {
     return new Future.sync(() {
       if (projection != null) {
@@ -313,8 +421,8 @@ class Connection {
 
         projection = 'full';
       }
-      Map<String,dynamic> modifyJson(Map<String,dynamic> json) {
-        return modify(new StorageBucket._(json, selector: readSelector)).toJson();
+      void modifyJson(Map<String,dynamic> json) {
+        modify(new StorageBucket._(json, selector: readSelector));
       }
       var query = new _Query(projectId)
           ..['ifMetagenerationMatch'] = ifMetagenerationMatch
@@ -329,14 +437,14 @@ class Connection {
   Future<Map<String,dynamic>> _readModifyUpdate(
       String path,
       _Query query,
-      Map<String,dynamic> modifyJson(Map<String,dynamic> json),
+      void modifyJson(Map<String,dynamic> json),
       String resultSelector) {
     return _sendJsonRpc(path, method: "GET", query: query)
-        .then(modifyJson)
-        .then((modified) {
+        .then((json) {
+          modifyJson(json);
           query = new _Query.from(query)
               ..['fields'] = resultSelector;
-          return _sendJsonRpc(path, method: "PATCH", query: query, body: modified);
+          return _sendJsonRpc(path, method: "PATCH", query: query, body: json);
         });
   }
 
@@ -462,21 +570,21 @@ class Connection {
           ..['ifMetagenerationMatch'] = ifMetagenerationMatch
           ..['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch;
     })
-    .then((query) => _sendJsonRpc("/b/$bucket/o/$name", method: "GET", query: query))
+    .then((query) => _sendJsonRpc("/b/$bucket/o/${_urlEncode(name)}", method: "GET", query: query))
     .then((response) => new StorageObject._(response, selector: selector));
   }
 
   Future<StorageObject> updateObject(
       String bucket,
       String object,
-      StorageObject modify(StorageObject object),
-      String readSelector,
+      void modify(StorageObject object),
       { int generation,
         int ifGenerationMatch,
         int ifGenerationNotMatch,
         int ifMetagenerationMatch,
         int ifMetagenerationNotMatch,
         String projection: 'noAcl',
+        String readSelector: "*",
         String resultSelector: "*"
       }) {
     return new Future.sync(() {
@@ -488,10 +596,10 @@ class Connection {
           ..['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch
           ..['projection'] = projection
           ..['fields'] = readSelector;
-      modifyJson(Map<String,dynamic> json) {
-        return modify(new StorageObject._(json, selector: readSelector)).toJson();
+      void modifyJson(Map<String,dynamic> json) {
+        return modify(new StorageObject._(json, selector: readSelector));
       }
-      return _readModifyUpdate("/b/$bucket/o/$object", query, modifyJson, resultSelector);
+      return _readModifyUpdate("/b/$bucket/o/${_urlEncode(object)}", query, modifyJson, resultSelector);
     })
     .then((response) => new StorageObject._(response, selector: resultSelector));
   }
@@ -512,7 +620,8 @@ class Connection {
         int ifMetagenerationMatch,
         int ifMetagenerationNotMatch,
         String projection: 'noAcl',
-        String selector: "*"
+        String selector: "*",
+        int maxRetries: 0
       }) {
     return new Future.sync(() {
       if (bucket is StorageBucket) {
@@ -565,7 +674,7 @@ class Connection {
       return _sendAuthorisedRequest(request);
     })
     .then(http.Response.fromStream)
-    .then(_handleJsonResponse)
+    .then((response) => _handleJsonResponse(response, maxRetries))
     .then((response) => new StorageObject._(response, selector: selector));
   }
 
@@ -575,7 +684,7 @@ class Connection {
       var /* String | StorageBucket */ bucket,
       var /* String | StorageObject */ object,
       String mimeType,
-      StreamSink<List<int>> uploadData,
+      Stream<List<int>> uploadData,
       { int ifGenerationMatch,
         int ifGenerationNotMatch,
         int ifMetagenerationMatch,
@@ -583,6 +692,7 @@ class Connection {
         String projection: 'noAcl',
         String selector: "*"
       }) {
+    //TODO: Check valid object name.
     throw new UnimplementedError("connection.resumableUpload");
   }
 
@@ -612,7 +722,7 @@ class Connection {
           ..['ifMetagenerationMatch'] = ifMetagenerationMatch
           ..['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch;
     })
-    .then((query) => _sendJsonRpc("/b/$bucket/o/$object", method: "DELETE", query:query));
+    .then((query) => _sendJsonRpc("/b/$bucket/o/${_urlEncode(object)}", method: "DELETE", query:query));
   }
 
   /**
@@ -650,13 +760,15 @@ class Connection {
         ..['fields'] = selector;
     })
     .then((query) {
-      var path = "/b/$sourceBucket/o/$sourceObject/copyTo/b/$destinationBucket";
+      var path = "/b/$sourceBucket/o/${_urlEncode(sourceObject)}/copyTo/b/$destinationBucket";
       if (destinationObject is String) {
+        _checkValidObjectName(destinationObject);
         //use the source bucket's metadata
-        return _sendJsonRpc("$path/${destinationObject}", method: "POST", query: query);
+        return _sendJsonRpc("$path/${_urlEncode(destinationObject)}", method: "POST", query: query);
       } else {
+        _checkValidObjectName(destinationObject.name);
         //Use the metadata provided by the destination bucket
-        return _sendJsonRpc("$path/${destinationObject.name}", method: "POST", query: query, body: destinationObject.toJson());
+        return _sendJsonRpc("$path/${_urlEncode(destinationObject.name)}", method: "POST", query: query, body: destinationObject);
       }
     })
     .then((response) => new StorageObject._(response, selector: selector));
@@ -679,6 +791,7 @@ class Connection {
         String selector: "*"
       }) {
     return new Future.sync(() {
+      _checkValidObjectName(destinationObject);
       return new _Query(projectId)
         ..['ifGenerationMatch'] = ifGenerationMatch
         ..['ifMetagenerationMatch'] = ifMetagenerationMatch
@@ -687,7 +800,6 @@ class Connection {
     .then((query) {
       var body = { 'kind': 'storage#composeRequest', 'sourceObjects': [] };
       body['destination'] = { 'bucket': destinationBucket, 'name': destinationObject };
-
       for (var obj in sourceObjects) {
         if (obj is String) {
           body['sourceObjects'].add({'name':obj});
@@ -697,7 +809,7 @@ class Connection {
           throw new ArgumentError("Invalid source object. Should be a list of String or CompositionSource objects");
         }
       }
-      return _sendJsonRpc("/b/$destinationBucket/o/${destinationObject}", method: "POST", query: query, body: body);
+      return _sendJsonRpc("/b/$destinationBucket/o/${_urlEncode(destinationObject)}", method: "POST", query: query, body: body);
     })
     .then((response) => new StorageObject._(response, selector: selector));
 
@@ -748,28 +860,59 @@ class ResumeToken {
 
 class RPCException implements Exception {
   final http.Response response;
-  final String method;
-  final url;
   final String message;
 
-  RPCException(this.response, this.method, this.url, [String this.message]);
+  int get statusCode => response.statusCode;
+  String get method => response.request.method;
+  Uri get url => response.request.url;
 
-  RPCException.invalidStatus(response, method, url):
-    this(response, method, url, response.body);
+  RPCException(this.response, [String this.message]);
 
-  RPCException.expectedJSON(response, method, url):
-    this(response, method, url,
-        "Expected JSON response, got ${response.headers[HttpHeaders.CONTENT_TYPE]}");
+  RPCException.invalidStatus(response):
+    this(response, response.body);
 
-  RPCException.expectedGzip(response, method, url):
-    this(response, method, url,
-        "Expected GZIP encoded response, got ${response.headers[HttpHeaders.CONTENT_ENCODING]}");
+  RPCException.expectedJSON(response):
+    this(response, "Expected JSON response, got ${response.headers[HttpHeaders.CONTENT_TYPE]}");
 
   String toString() =>
       "Request to remote procedure call $method failed with status ${response.statusCode}\n"
       "endpoint: $url\n"
       "message: ${message}";
 }
+
+final _BUCKET_NAME = new RegExp(r'^[a-z0-9]([a-zA-Z0-9_.-]+)[a-z0-9]$');
+final _IP = new RegExp(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$');
+
+void _checkValidBucketName(String name) {
+  if (name.indexOf(_BUCKET_NAME) < 0)
+    throw new ArgumentError("Bucket name must match ${_BUCKET_NAME.pattern}");
+  if (!name.contains('.') && name.length > 63)
+    throw new ArgumentError("Bucket names not containing '.' are limited to 63 characters");
+  if (name.contains('.')) {
+    if (name.length > 222) {
+      throw new ArgumentError("Bucket names containing '.' are limited to 222 characters");
+    }
+    var comps = name.split('.');
+    if (comps.any((comp) => comp.length > 63)) {
+      throw new ArgumentError("Each dot-separated component of a bucket name is limited to 63 characters");
+    }
+  }
+  if (name.indexOf(_IP) >= 0)
+    throw new ArgumentError("Bucket name cannot be an IP address in dot-separated notation");
+  if (name.startsWith('goog'))
+    throw new ArgumentError("Bucket name cannot start with 'goog' prefix");
+}
+
+void _checkValidObjectName(String name) {
+  if (name == "")
+    throw new ArgumentError("Object name cannot be empty");
+  if (UTF8.encode(name).length > 1024)
+    throw new ArgumentError("Object names are limited to 1024 bytes when encoded as a UTF-8 string");
+  if (name.contains('\n') || name.contains('\r'))
+    throw new ArgumentError("Object name cannot contain newline ('\n') or carriage return ('\r') characters");
+}
+
+const _urlEncode = Uri.encodeComponent;
 
 
 class _Query extends DelegatingMap<String,String> {
@@ -800,7 +943,7 @@ class _Query extends DelegatingMap<String,String> {
     StringBuffer sbuf = new StringBuffer();
     forEach((k,v) {
       if (sbuf.isNotEmpty) sbuf.write("&");
-      sbuf.write("$k=$v");
+      sbuf.write("$k=${_urlEncode(v)}");
     });
     return sbuf.toString();
   }

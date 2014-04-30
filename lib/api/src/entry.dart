@@ -239,6 +239,9 @@ class StorageObject extends StorageEntry {
     return null;
   }
 
+  StorageObject(String bucket, String name):
+    this._({'bucket': bucket, 'name':name});
+
   StorageObject._(Map<String,dynamic> json, {String selector: "*"}): super._(json, selector: selector);
 
   String toString() => "StorageObject ($bucket $name)";
