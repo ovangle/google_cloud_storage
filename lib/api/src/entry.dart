@@ -119,9 +119,10 @@ class StorageBucket extends StorageEntry {
       "name,acl,cors,defaultObjectAcl,lifecycle,location,logging,storageClass,versioning,website";
 
   StorageBucket(String name, {String selector: _CREATE_SELECTOR}) :
-    this._({"name" : name}, selector: selector);
+    this.fromJson({"name" : name}, selector: selector);
 
-  StorageBucket._(Map<String,dynamic> json, {String selector}): super._(json, selector: selector);
+  StorageBucket.fromJson(Map<String,dynamic> json, {String selector}):
+    super._(json, selector: selector);
 
   String toString() => "StorageBucket ($name)";
 }
@@ -132,7 +133,6 @@ class StorageObject extends StorageEntry {
    * The name of the bucket containing this [StorageObject]
    */
   String get bucket => getField("bucket");
-
 
   /**
    * Number of underlying components that make up this object.
@@ -239,10 +239,10 @@ class StorageObject extends StorageEntry {
     return null;
   }
 
-  StorageObject(String bucket, String name):
-    this._({'bucket': bucket, 'name':name});
+  StorageObject(String bucket, String name, {String selector: "*"}):
+    this.fromJson({'bucket': bucket, 'name':name}, selector: selector);
 
-  StorageObject._(Map<String,dynamic> json, {String selector: "*"}): super._(json, selector: selector);
+  StorageObject.fromJson(Map<String,dynamic> json, {String selector: "*"}): super._(json, selector: selector);
 
   String toString() => "StorageObject ($bucket $name)";
 }

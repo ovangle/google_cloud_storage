@@ -88,7 +88,7 @@ abstract class AccessControls extends JsonObject {
  * [BucketAccessControls] specify who has access to the data and to what extent.
  */
 class BucketAccessControls extends AccessControls {
-  BucketAccessControls._(Map<String,dynamic> json, {String selector: "*"}):
+  BucketAccessControls.fromJson(Map<String,dynamic> json, {String selector: "*"}):
     super._(json, selector: selector);
   
   BucketAccessControls._delegate(JsonObject obj, var path, {String selector: "*"}):
@@ -107,7 +107,7 @@ class ObjectAccessControls extends AccessControls {
    */
   int get generation => getField("generation");
   
-  ObjectAccessControls._(Map<String,dynamic> json, {String selector: "*"}):
+  ObjectAccessControls.fromJson(Map<String,dynamic> json, {String selector: "*"}):
     super._(json, selector:selector);
   
   ObjectAccessControls._delegate(JsonObject obj, var path, {String selector: "*"}):
