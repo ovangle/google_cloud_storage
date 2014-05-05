@@ -13,7 +13,7 @@ import 'package:logging/logging.dart';
 import 'package:google_oauth2_client/google_oauth2_console.dart' as oauth2;
 
 import '../api/api.dart';
-import '../either/either.dart';
+import '../utils/either.dart';
 import '../json/path.dart';
 import '../json/selector.dart';
 

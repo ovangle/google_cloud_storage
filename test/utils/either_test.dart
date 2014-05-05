@@ -1,7 +1,7 @@
-library either_tests;
+library either_test;
 
 import 'package:unittest/unittest.dart';
-import '../../lib/either/either.dart';
+import '../../lib/utils/either.dart';
 
 void main() {
   group("either:", () {
