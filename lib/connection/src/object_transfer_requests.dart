@@ -127,9 +127,9 @@ abstract class ObjectTransferRequests implements ConnectionBase {
           handler: _handleResumableUploadInit)
       .then((location) {
         if (source is SearchableSource) {
-          _resumeUploadAt(location, source, 0);
+          return _resumeUploadAt(location, source, 0);
         } else {
-          _uploadChunked(location, source);
+          return _uploadChunked(location, source);
         }
       });
     });
@@ -141,7 +141,7 @@ abstract class ObjectTransferRequests implements ConnectionBase {
    * (if no errors are encountered), thus completing with minimal
    * network costs.
    *
-   * It can only be used with [SearchableSource] objects.
+   * It can only be used with [SearchableSource] objects (ie. Files)
    */
   Future<StorageObject> _resumeUploadAt(
       Uri uploadUri,
@@ -190,24 +190,79 @@ abstract class ObjectTransferRequests implements ConnectionBase {
           var rpcError = (err as RPCException);
           if (_RETRY_STATUS.contains(rpcError.statusCode)) {
             return _getUploadStatus(uploadUri, source)
-                .then((range) {
-              if (range.hi >= source.length) {
-                //Request has already been completed
-                //FIXME: We should return a getStorageObject response here.
-                return null;
-              } else {
-                return _resumeUploadAt(uploadUri, source, range.hi + 1);
+                .then((result) {
+              if (result is StorageObject) {
+                return range;
+              } else if (result is Range) {
+                return _resumeUploadAt(uploadUri, source, result.hi + 1);
               }
             });
           }
           throw err;
         }, test: (err) => err is RPCException);
   }
-
+  /**
+   * A resumable upload which can be used with any [Source] type, but which emits a
+   * request for each block of data in the source.
+   *
+   * Slower as it uses more network requests to complete the upload, but can be
+   * used with [Sources] which provide data asyncronously (eg. [Stream]s)
+   */
   Future<StorageObject> _uploadChunked(
       Uri uploadUri,
       Source source) {
-    throw new UnimplementedError('ObjectTransferRequests._uploadChunked');
+
+    var uploadId = uploadUri.queryParameters['upload_id'];
+    logger.info("Resuming object upload (uploadId: $uploadId)");
+    logger.info("Content length: ${source.length}");
+
+    Future sendNextBlock() {
+
+      Future sendCurrentBlock() {
+        return source.current().then((block) {
+
+          var sourcePos = source.currentPosition;
+          var range = new ContentRange(
+              new Range(sourcePos, sourcePos + block.length - 1),
+              source.length);
+          http.Request request = new http.Request("PUT", uploadUri)
+              ..headers[HttpHeaders.CONTENT_TYPE] = source.contentType.toString()
+              ..headers[HttpHeaders.CONTENT_RANGE] = range.toString();
+
+          logger.info("Sending chunk with ${range}\n"
+                      "\tto upload $uploadId");
+          print(block.where((v) => v == null));
+          request.bodyBytes = new Uint8List.fromList(block);
+
+          return _sendAuthorisedRequest(request)
+              .then(http.Response.fromStream)
+              .then(_handleResumableUploadStatus(source))
+              .then((result) {
+                if (result is StorageObject)
+                  return result;
+                if (result is Range) {
+                  //We haven't added the whole range for the block.
+                  //Resend it.
+                  if (result.hi != range.range.hi) {
+                    logger.warning("Retrying upload chunk\n"
+                                   "\tUpload: $uploadId\n"
+                                   "\tReason Result range ($result) does not match request range ($range)");
+                    return sendCurrentBlock();
+                  }
+                  return sendNextBlock();
+                }
+              });
+        });
+      }
+
+      if (!source.moveNext()) {
+        return new Future.value();
+      }
+      return sendCurrentBlock();
+    }
+
+    return sendNextBlock();
+
   }
 
   Future<Range> _getUploadStatus(Uri uploadUri, Source source) {
@@ -221,21 +276,40 @@ abstract class ObjectTransferRequests implements ConnectionBase {
     });
   }
 
+  /**
+   * Check the response status of a partial resume upload request
+   * If the status is one of
+   * - 200 OK
+   * - 201 CREATED
+   * Then the response contains the object metadata and the body is parsed as if it
+   * contains the object metadata
+   * If the status is one of
+   * - 206 PARTIAL CONTENT
+   * - 308 RESUME INCOMPLETE
+   * Then the response is considered to be a resume status and the `Range` header
+   * is parsed as a [Range].
+   *
+   * Otherwise, response is redirected to [:_handleResponse:]
+   */
   _ResponseHandler _handleResumableUploadStatus(Source source) {
     return (http.Response response) {
-      _handleResponse(response)
-        .then((response) {
-          if (response.statusCode == HttpStatus.OK || response.statusCode == HttpStatus.CREATED) {
-            return new Range(0, source.length);
+      return new Future.sync(() {
+        if (response.statusCode == HttpStatus.OK || response.statusCode == HttpStatus.CREATED) {
+          try {
+            return _handleStorageObjectResponse('*');
+          } on RPCException catch (e) {
+            logger.severe(e.toString());
+            throw e;
           }
-          if (response.statusCode == HttpStatus.PARTIAL_CONTENT) {
-            var range = response.headers[HttpHeaders.RANGE];
-            if (range == null)
-              throw new RPCException.noRangeHeader(response);
-            return Range.parse(range);
-          }
-          throw new RPCException.invalidStatus(response);
-        });
+        }
+        if (response.statusCode == HttpStatus.PARTIAL_CONTENT || response.statusCode == 308 /* Resume incomplete */) {
+          var range = response.headers[HttpHeaders.RANGE];
+          if (range == null)
+            throw new RPCException.noRangeHeader(response);
+          return Range.parse(range);
+        }
+        return _handleResponse(response);
+      });
     };
   }
 
@@ -274,9 +348,10 @@ abstract class Source {
       file.open(mode: FileMode.READ)
       .then((f) => new _FileSource(f, ContentType.parse(contentType), onError: onError));
 
-  static Future<Source> fromStream(Stream<List<int>> stream, int contentLength, String contentType, {void onError(err, [StackTrace stackTrace])}) =>
-      new Future.value(new _StreamSource(stream, contentLength, ContentType.parse(contentType), onError: onError));
-
+  /*
+  static Source fromStream(Stream<List<int>> stream, int contentLength, String contentType, {void onError(err, [StackTrace stackTrace])}) =>
+      new _StreamSource(stream, contentLength, ContentType.parse(contentType), onError: onError);
+  */
   /**
    * Get the length of the [Source] in bytes
    */
@@ -379,6 +454,7 @@ class _FileSource implements SearchableSource {
  * Bytes are read from the stream in [CHUNK_SIZE] chunks. When the server returns
  * a status which
  */
+/*
 class _StreamSource implements Source {
   static const int CHUNK_SIZE = Source.CHUNK_SIZE;
 
@@ -400,7 +476,7 @@ class _StreamSource implements Source {
    */
   var _pendingChunks = new LinkedList<List<int>>();
 
-  int _chunkPos;
+  int _chunkPos = 0;
   var _currentChunk = new List<int>(CHUNK_SIZE);
 
   final Function onError;
@@ -417,10 +493,16 @@ class _StreamSource implements Source {
         _chunkPos = 0;
       }
       _currentChunk.setRange(_chunkPos, data.length, data);
+      _chunkPos += data.length;
     },
     onError: (err, stackTrace) {
-      if (this.onError != null)
+      if (this.onError != null) {
         onError(err,stackTrace);
+        _streamSubscription.cancel();
+      } else {
+        print("Error occurred when handling stream");
+        throw err;
+      }
     },
     onDone: () {
       //Add the last partial chunk to the pending chunks.
@@ -436,7 +518,10 @@ class _StreamSource implements Source {
   @override
   Future<List<int>> current() {
     if (_pendingChunks.isEmpty) {
-      return new Future.delayed(new Duration(seconds: 3), this.current);
+      return new Future.delayed(
+          new Duration(seconds: 3),
+          () => this.current()
+      );
     }
     return new Future.sync(() {
       _numChunksInCurrentBlock = _pendingChunks.length;
@@ -470,3 +555,4 @@ class _StreamSource implements Source {
     return _streamPos <= _length;
   }
 }
+*/

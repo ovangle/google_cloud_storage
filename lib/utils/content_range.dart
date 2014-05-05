@@ -53,7 +53,7 @@ class ContentRange {
  * A representation of a Http Range header.
  */
 class Range {
-  static final Pattern _RANGE = new RegExp(r'([0-9]+)-([0-9]+)$');
+  static final Pattern _RANGE = new RegExp(r'bytes=([0-9]+)-([0-9]+)$');
   static Range parse(String range) {
     var match = _RANGE.matchAsPrefix(range);
     if (match == null) {

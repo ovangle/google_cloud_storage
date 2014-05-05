@@ -2,6 +2,7 @@ library connection;
 
 import 'dart:async';
 import 'dart:convert' show UTF8, JSON;
+import 'dart:typed_data' show Uint8List;
 import 'dart:io';
 import 'dart:math' as math;
 
