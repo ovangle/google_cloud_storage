@@ -348,91 +348,6 @@ abstract class ObjectRequests implements ConnectionBase {
     });
   }
 
-  /**
-   * Store a new [:object:] with the given [:mimeType:] in the given [:bucket:],
-   * overwriting the old one if one exists. This method is suitable for small
-   * objects (with a size <= `5MB`), as it retries the upload completely on
-   * failure. For resumableUploads, use the [:uploadObjectResumable:] method.
-   *
-   * [:object:] must be either a [String] or [StorageObject]. If a [String],
-   * then default values for the object metadata versions will be provided by
-   * server.
-   *
-   * [:ifGenerationMatch:] makes the operation's success dependent on the object if it's [:generation:]
-   * matches the provided value.
-   * [:ifGenerationNotMatch:] makes the operation's success dependent if it's [:generation:]
-   * does not match the provided value.
-   * [:ifMetagenerationMatch:] makes the operation's success dependent if it's [:metageneration:]
-   * matches the provided value
-   * [:ifMetagenerationNotMatch:] makes the operation's success dependent if its [:metageneration:]
-   * does not match the provided value.
-   *
-   * [:projection:] must be one of:
-   * - `noAcl` No Access control details are included in the response (default)
-   * - `full` Access control details are specified on the response. The user making
-   * the request must have *OWNER* privileges for the [:bucket:].
-   *
-   * [:predefinedAcl:] is a [PredefinedAcl] to apply to the object. Default is [PredefinedAcl.PRIVATE]..
-   *
-   * Returns a [Future] which completes with the metadata of the uploaded object,
-   * with fields populated by the given [:selector:].
-   */
-  Future<StorageObject> uploadObject(
-      String bucket,
-      var /* String | StorageObject */ object,
-      String mimeType,
-      List<int> uploadData,
-      { int ifGenerationMatch,
-        int ifGenerationNotMatch,
-        int ifMetagenerationMatch,
-        int ifMetagenerationNotMatch,
-        PredefinedAcl predefinedAcl: PredefinedAcl.PRIVATE,
-        String projection: 'noAcl',
-        String selector: '*'
-      }) {
-    return new Future.sync(() {
-      if (object is String) {
-        object = new StorageObject(bucket, object, selector: "name,object");
-      } else if (object is! StorageBucket) {
-        throw new ArgumentError("Expected a String or StorageObject");
-      }
-
-      var query = new _Query(projectId)
-          ..['ifGenerationMatch'] = ifGenerationMatch
-          ..['ifGenerationNotMatch'] = ifGenerationNotMatch
-          ..['ifMetagenerationMatch'] = ifMetagenerationMatch
-          ..['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch
-          ..['projection'] = projection
-          ..['predefinedAcl'] = predefinedAcl
-          ..['fields'] = selector;
-
-      Map<String,String> headers = new Map<String,String>()
-          ..[HttpHeaders.CONTENT_TYPE] = _MULTIPART_CONTENT;
-
-      var metadataContent = new _MultipartRequestContent()
-          ..headers[HttpHeaders.CONTENT_TYPE] = _JSON_CONTENT
-          ..body = UTF8.encode(JSON.encode(object));
-
-      var md5Hash = CryptoUtils.bytesToBase64((new MD5()..add(uploadData)).close());
-
-      var uploadContent = new _MultipartRequestContent()
-          ..headers[HttpHeaders.CONTENT_TYPE] = mimeType
-          ..headers[HttpHeaders.CONTENT_LENGTH] = '${uploadData.length}'
-          ..body = uploadData;
-
-      logger.info("Uploading $object as multipart request");
-      logger.info("Mime type: $mimeType");
-
-      return _remoteProcedureCall(
-          "/b/$bucket/o",
-          method: "POST",
-          query: query,
-          headers: headers,
-          isUploadUrl: true,
-          handler: _handleStorageObjectResponse(selector));
-
-    });
-  }
 
 
   /**
@@ -537,7 +452,7 @@ abstract class ObjectRequests implements ConnectionBase {
       return results;
     }
 
-    return _pagedRemoteProcedureCall("/b/$bucket", query: query)
+    return _pagedRemoteProcedureCall("/b/$bucket/o", query: query)
         .expand(expandPage);
   }
 

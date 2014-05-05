@@ -5,20 +5,26 @@ import 'dart:convert' show UTF8, JSON;
 import 'dart:io';
 import 'dart:math' as math;
 
+
 import 'package:collection/wrappers.dart' show DelegatingMap;
 import 'package:crypto/crypto.dart' show MD5, CryptoUtils;
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
+import 'package:quiver/async.dart' show forEachAsync;
+import 'package:quiver/iterables.dart' show range;
 
 import 'package:google_oauth2_client/google_oauth2_console.dart' as oauth2;
 
 import '../api/api.dart';
+import '../utils/content_range.dart';
 import '../utils/either.dart';
+import '../utils/linkedlist.dart';
 import '../json/path.dart';
 import '../json/selector.dart';
 
 part 'src/bucket_requests.dart';
 part 'src/object_requests.dart';
+part 'src/object_transfer_requests.dart';
 
 /**
  * Percent escape a url component.
@@ -38,14 +44,13 @@ const API_SCOPES =
           };
 
 const _JSON_CONTENT = 'application/json; charset=UTF-8';
-const _MULTIPART_CONTENT = 'multipart/related; boundary=content_boundary';
+const _MULTIPART_CONTENT = 'multipart/related; boundary="content_boundary"';
 
 typedef Future<dynamic> _ResponseHandler(http.Response response);
 
-
-
-
-
+/**
+ * A pseudo random number generator.
+ */
 final _random = new math.Random();
 
 /**
@@ -63,7 +68,8 @@ const _RETRY_STATUS =
 
 class CloudStorageConnection extends ConnectionBase
 with BucketRequests,
-     ObjectRequests {
+     ObjectRequests,
+     ObjectTransferRequests {
 
   static Future<CloudStorageConnection> open(String projectNumber, String projectId, PermissionRole role,
       { String serviceAccount, String pathToPrivateKey}) {
@@ -182,12 +188,8 @@ abstract class ConnectionBase {
     if (handler == null)
       throw new ArgumentError("No handler provided");
 
-    var url;
-    if (isUploadUrl) {
-      url = _platformUrl(path, query);
-    } else {
-      url = _platformUploadUrl(path, query);
-    }
+    var url =
+        (isUploadUrl ? _platformUploadUrl : _platformUrl)(path, query);
     http.Request request = new http.Request(method, url);
 
     var contentType = headers[HttpHeaders.CONTENT_TYPE];
@@ -200,7 +202,7 @@ abstract class ConnectionBase {
     }
     request.headers.addAll(headers);
     var md5Hash = (new MD5()..add(request.bodyBytes)).close();
-    request.headers[HttpHeaders.CONTENT_MD5] = md5Hash;
+    request.headers[HttpHeaders.CONTENT_MD5] = CryptoUtils.bytesToBase64(md5Hash);
 
     logger.info("Submitting remote procedure call ($request)");
 
@@ -296,7 +298,7 @@ abstract class ConnectionBase {
    * of retries). Otherwise, check that the status code is in the 20x range
    * and throw an exception if it isn't.
    */
-  Future<dynamic> _handleResponse(http.Response response, [int retryCount=0]) {
+  Future<http.Response> _handleResponse(http.Response response, [int retryCount=0]) {
 
     Future<dynamic> resendRpcWithDelay() {
       //The delay is calculated as (2^retryCount + random # of milliseconds)
@@ -321,7 +323,7 @@ abstract class ConnectionBase {
         throw new RPCException.invalidStatus(response);
       }
       logger.info("Remote procedure call to ${response.request.method} ${response.request.url} returned status ${response.statusCode}");
-      return response.body;
+      return response;
     });
   }
 
@@ -330,7 +332,7 @@ abstract class ConnectionBase {
    */
   Future<Map<String,dynamic>> _handleJsonResponse(http.Response response) =>
       _handleResponse(response)
-      .then((responseBody) {
+      .then((response) {
 
         var contentType = ContentType.parse(response.headers[HttpHeaders.CONTENT_TYPE]);
         if (contentType.mimeType != "application/json") {
@@ -346,7 +348,7 @@ abstract class ConnectionBase {
    */
   Future _handleEmptyResponse(http.Response response) =>
       _handleResponse(response)
-      .then((responseBody) {
+      .then((response) {
         if (response.statusCode != HttpStatus.NO_CONTENT) {
           logger.severe("Expected empty response from ${response.request}");
           throw new RPCException.expectedEmpty(response);
@@ -355,66 +357,7 @@ abstract class ConnectionBase {
       });
 }
 
-/**
- * An enum consisting of various predefined acl values which can be
- * set at object creation.
- */
-class PredefinedAcl {
 
-  /**
-   * Object owner gets `OWNER` access
-   */
-  static const PRIVATE = const PredefinedAcl._('private');
-
-  /**
-   * Object owner gets `OWNER` access and `allAuthenticatedUsers`
-   * get `READER` access
-   */
-  static const AUTHENTICATED_READ = const PredefinedAcl._('authenticatedRead');
-
-  /**
-   * Object owner gets `OWNER` access and `allUsers` get
-   * `READER` access
-   */
-  static const PUBLIC_READ = const PredefinedAcl._('publicRead');
-
-  /**
-   * Object owner gets `OWNER` access and all project team owners
-   * get `OWNER` access
-   */
-  static const BUCKET_OWNER_FULL_CONTROL = const PredefinedAcl._('bucketOwnerFullControl');
-
-  /**
-   * Object owner gets `OWNER` access and project team owners get
-   * `READ` access
-   */
-  static const BUCKET_OWNER_READ = const PredefinedAcl._('bucketOwnerRead');
-
-
-  /**
-   * Object owner gets `OWNER` access and project team members
-   * get access according to their roles.
-   */
-  static const PROJECT_PRIVATE = const PredefinedAcl._('projectPrivate');
-
-  final String _value;
-
-  static const List<String> values =
-      const [ PRIVATE, AUTHENTICATED_READ, PUBLIC_READ,
-              BUCKET_OWNER_FULL_CONTROL, BUCKET_OWNER_READ, PROJECT_PRIVATE
-            ];
-
-  const PredefinedAcl._(this._value);
-
-  factory PredefinedAcl(String value) {
-    var v = values.firstWhere((v) => v.toString() == value, orElse: () => null);
-    if (v != null)
-      return v;
-    throw new ArgumentError("Invalid predefined acl value: '$v'");
-  }
-
-  String toString() => _value;
-}
 
 
 /**
@@ -439,6 +382,9 @@ class RPCException implements Exception {
 
   RPCException.expectedEmpty(response):
     this(response, "Expected empty response");
+
+  RPCException.noRangeHeader(response):
+    this(response, "Expected range header in response");
 
   String toString() =>
       "Request to remote procedure call $method failed with status ${response.statusCode}\n"
@@ -508,10 +454,12 @@ class _MultipartRequestContent {
   static List<int> encodeBody(List<_MultipartRequestContent> contentSegments) {
     BytesBuilder builder = new BytesBuilder();
     for (var contentSegment in contentSegments) {
-      builder.add(MULTIPART_CONTENT_SEPARATOR);
+      builder
+        ..add(MULTIPART_CONTENT_SEPARATOR)
+        ..add(NEWLINE);
       contentSegment.addTo(builder);
     }
-    builder.add(MULTIPART_CONTENT_TERMINATOR);
+    builder..add(MULTIPART_CONTENT_TERMINATOR);
     return builder.toBytes();
   }
 
@@ -528,8 +476,17 @@ class _MultipartRequestContent {
       builder..add(UTF8.encode("$k: $v"))..add(NEWLINE);
     });
 
-    builder..add(NEWLINE);
-    builder.add(body);
+    builder
+        ..add(NEWLINE)
+        ..add(body)
+        ..add(NEWLINE)..add(NEWLINE);
 
   }
+}
+
+// FIXME: Workaround for quiver bug #125
+// forEachAsync doesn't complete if iterable is empty.
+Future _forEachAsync(Iterable iterable, Future action(var item)) {
+  if (iterable.isEmpty) return new Future.value();
+  return forEachAsync(iterable, action);
 }
