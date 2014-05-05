@@ -47,7 +47,7 @@ const API_SCOPES =
 const _JSON_CONTENT = 'application/json; charset=UTF-8';
 const _MULTIPART_CONTENT = 'multipart/related; boundary="content_boundary"';
 
-typedef Future<dynamic> _ResponseHandler(http.Response response);
+typedef Future<dynamic> _ResponseHandler(http.BaseResponse response);
 
 /**
  * A pseudo random number generator.
@@ -292,6 +292,8 @@ abstract class ConnectionBase {
         });
   }
 
+
+
   /**
    * A simple response handler.
    * If the status code is one of the status codes we need to retry, then
@@ -299,23 +301,24 @@ abstract class ConnectionBase {
    * of retries). Otherwise, check that the status code is in the 20x range
    * and throw an exception if it isn't.
    */
-  Future<http.Response> _handleResponse(http.Response response, [int retryCount=0]) {
+  Future<http.Response> _handleResponse(http.BaseResponse response, [int retryCount=0]) {
 
-    Future<dynamic> resendRpcWithDelay() {
-      //The delay is calculated as (2^retryCount + random # of milliseconds)
-      Duration delay = new Duration(seconds: math.pow(2, retryCount), milliseconds: _random.nextInt(1000));
-      return new Future.delayed(delay, () {
-        _sendAuthorisedRequest(response.request)
-            .then(http.Response.fromStream)
-            .then((response) => _handleResponse(response, retryCount + 1));
-      });
-    }
+    Future<dynamic> resendRpcWithDelay(http.BaseResponse response, [int retryCount=0]) {
+        //The delay is calculated as (2^retryCount + random # of milliseconds)
+        Duration delay = new Duration(seconds: math.pow(2, retryCount), milliseconds: _random.nextInt(1000));
+        return new Future.delayed(delay, () {
+          _sendAuthorisedRequest(response.request)
+              .then(http.Response.fromStream)
+              .then((response) => _handleResponse(response, retryCount + 1));
+        });
+      }
+
 
     if (_RETRY_STATUS.contains(response.statusCode) &&
         retryCount < maxRetryRequests) {
       logger.warning("Remote procedure call to ${response.request.method} ${response.request.url} failed with status ${response.statusCode}");
       logger.warning("Retrying... (retry count: $retryCount)");
-      return resendRpcWithDelay();
+      return resendRpcWithDelay(response, retryCount);
     }
 
     return new Future.sync(() {
@@ -480,7 +483,7 @@ class _MultipartRequestContent {
     builder
         ..add(NEWLINE)
         ..add(body)
-        ..add(NEWLINE)..add(NEWLINE);
+        ..add(NEWLINE);
 
   }
 }

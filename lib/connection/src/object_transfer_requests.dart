@@ -93,12 +93,148 @@ abstract class ObjectTransferRequests implements ConnectionBase {
     });
   }
 
+  /**
+   * Download the object.
+   */
+  Stream<List<int>> downloadObject(
+      String bucket,
+      String object,
+      { int generation,
+        int ifGenerationMatch,
+        int ifGenerationNotMatch,
+        int ifMetagenerationMatch,
+        int ifMetagenerationNotMatch
+      }) {
+      var query = new _Query(projectId)
+          ..['generation'] = generation
+          ..['ifGenerationMatch'] = ifGenerationMatch
+          ..['ifGenerationNotMatch'] = ifMetagenerationMatch
+          ..['ifMetagenerationMatch'] = ifMetagenerationMatch
+          ..['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch
+          ..['alt'] = 'media';
+      object = _urlEncode(object);
 
-  Future<StorageObject> resumableUpload(
+      var url = _platformUrl("/b/$bucket/o/$object", query);
+
+      StreamController<List<int>> controller = new StreamController<List<int>>();
+
+      var request = new http.Request("GET", url);
+
+      _sendAuthorisedRequest(request)
+          .then(_handleResponse)
+          .then((http.StreamedResponse response) =>
+            controller.addStream(response.stream)
+            .then((_) => controller.close())
+          )
+          .catchError(controller.addError);
+
+      return controller.stream;
+  }
+
+  Stream<List<int>> downloadObjectResumable(
+       String bucket,
+       String object,
+       { int generation,
+         int ifGenerationMatch,
+         int ifGenerationNotMatch,
+         int ifMetagenerationMatch,
+         int ifMetagenerationNotMatch,
+         Range byteRange
+       }) {
+       var query = new _Query(projectId)
+           ..['generation'] = generation
+           ..['ifGenerationMatch'] = ifGenerationMatch
+           ..['ifGenerationNotMatch'] = ifMetagenerationMatch
+           ..['ifMetagenerationMatch'] = ifMetagenerationMatch
+           ..['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch
+           ..['alt'] = 'media';
+       object = _urlEncode(object);
+
+       var url = _platformUrl("/b/$bucket/o/$object", query);
+
+       var request = new http.Request("GET", url);
+
+       if (byteRange != null) {
+         request.headers[HttpHeaders.RANGE] = byteRange.toString();
+       }
+
+       StreamController<List<int>> controller = new StreamController<List<int>>();
+
+       _sendAuthorisedRequest(request)
+           .then(_handleResponse)
+           .then((http.StreamedResponse response) {
+             var contentLength = response.contentLength;
+             int byteCounter = 0;
+             response.stream.listen(
+                 (List<int> data) {
+                    controller.add(data);
+                    byteCounter += data.length;
+                  },
+                  onError: (err, stackTrace) {
+                    logger.warning("Encountered error when reading response stream\n"
+                        "Resuming", err, stackTrace);
+                    Range range = new Range(byteCounter + 1, contentLength - 1);
+                    return downloadObjectResumable(
+                        bucket,
+                        object,
+                        generation: generation,
+                        ifGenerationMatch: ifGenerationMatch,
+                        ifGenerationNotMatch: ifGenerationNotMatch,
+                        ifMetagenerationMatch: ifMetagenerationMatch,
+                        ifMetagenerationNotMatch: ifMetagenerationNotMatch,
+                        byteRange: range);
+                  },
+                  onDone: () {
+                    controller.close();
+                  });
+            })
+           .catchError(controller.addError);
+
+       return controller.stream;
+   }
+
+  /**
+   * Store a new [:object:] with the given [:mimeType:] to the specified [:bucket:],
+   * overwriting any file which already exists with the given name.
+   * This method is suitable for any size of object, as it automatically resumes
+   * the download at the last uploaded byte when the download fails.
+   *
+   * Currently the method only supports uploading a [File] type object.
+   *
+   * [:object:] must be either a [String] or [StorageObject]. If a [String],
+   * then default values for the object metadata versions will be provided by
+   * server.
+   *
+   * [:ifGenerationMatch:] makes the operation's success dependent on the object if it's [:generation:]
+   * matches the provided value.
+   * [:ifGenerationNotMatch:] makes the operation's success dependent if it's [:generation:]
+   * does not match the provided value.
+   * [:ifMetagenerationMatch:] makes the operation's success dependent if it's [:metageneration:]
+   * matches the provided value
+   * [:ifMetagenerationNotMatch:] makes the operation's success dependent if its [:metageneration:]
+   * does not match the provided value.
+   *
+   * [:projection:] must be one of:
+   * - `noAcl` No Access control details are included in the response (default)
+   * - `full` Access control details are specified on the response. The user making
+   * the request must have *OWNER* privileges for the [:bucket:].
+   *
+   * [:predefinedAcl:] is a [PredefinedAcl] to apply to the object. Default is [PredefinedAcl.PRIVATE]..
+   *
+   * Returns a [Future] which completes with the metadata of the uploaded object,
+   * with fields populated by the given [:selector:].
+   */
+  Future<StorageObject> uploadObjectResumable(
       String bucket,
       var /* String | StorageObject */ object,
+      String mimeType,
       Source source,
       { int ifGenerationMatch,
+        int ifGenerationNotMatch,
+        int ifMetagenerationMatch,
+        int ifMetagenerationNotMatch,
+        PredefinedAcl predefinedAcl: PredefinedAcl.PRIVATE,
+        String projection: 'noAcl',
         String selector: '*'
       }) {
     return new Future.sync(() {
@@ -110,12 +246,14 @@ abstract class ObjectTransferRequests implements ConnectionBase {
 
       var headers = new Map()
           ..[HttpHeaders.CONTENT_TYPE] = _JSON_CONTENT
-          ..['X-Upload-Content-Type'] = source.contentType.toString()
+          ..['X-Upload-Content-Type'] = mimeType
           ..['X-Upload-Content-Length'] = source.length.toString();
 
       var query = new _Query(projectId)
           ..['ifGenerationMatch'] = ifGenerationMatch
           ..['uploadType'] = 'resumable';
+
+      _ResponseHandler handler = _handleStorageObjectResponse(selector);
 
       return _remoteProcedureCall(
           "/b/$bucket/o",
@@ -127,8 +265,14 @@ abstract class ObjectTransferRequests implements ConnectionBase {
           handler: _handleResumableUploadInit)
       .then((location) {
         if (source is SearchableSource) {
-          return _resumeUploadAt(location, source, 0);
+          return _resumeUploadAt(
+              location,
+              mimeType,
+              source,
+              0,
+              handler);
         } else {
+          throw new UnimplementedError("Only searchable sources implemented");
           return _uploadChunked(location, source);
         }
       });
@@ -145,19 +289,19 @@ abstract class ObjectTransferRequests implements ConnectionBase {
    */
   Future<StorageObject> _resumeUploadAt(
       Uri uploadUri,
+      String contentType,
       SearchableSource source,
-      int position) {
+      int position,
+      _ResponseHandler metadataHandler) {
     source.setPosition(position);
     http.StreamedRequest request = new http.StreamedRequest("PUT", uploadUri);
 
-
     var contentRange = new ContentRange(new Range(position, source.length - 1), source.length);
     request.headers[HttpHeaders.CONTENT_LENGTH] = (contentRange.length - contentRange.range.lo).toString();
-    request.headers[HttpHeaders.CONTENT_TYPE] = source.contentType.toString();
+    request.headers[HttpHeaders.CONTENT_TYPE] = contentType;
     request.headers[HttpHeaders.CONTENT_RANGE] = contentRange.toString();
 
     print(request.headers);
-
 
     var uploadId = request.url.queryParameters['upload_id'];
     logger.info("Resuming object upload (uploadId: $uploadId)");
@@ -185,16 +329,16 @@ abstract class ObjectTransferRequests implements ConnectionBase {
 
     return _sendAuthorisedRequest(request)
         .then(http.Response.fromStream)
-        .then(_handleStorageObjectResponse('*'))
+        .then(metadataHandler)
         .catchError((err, stackTrace) {
           var rpcError = (err as RPCException);
           if (_RETRY_STATUS.contains(rpcError.statusCode)) {
-            return _getUploadStatus(uploadUri, source)
+            return _getUploadStatus(uploadUri, source, metadataHandler)
                 .then((result) {
               if (result is StorageObject) {
                 return range;
               } else if (result is Range) {
-                return _resumeUploadAt(uploadUri, source, result.hi + 1);
+                return _resumeUploadAt(uploadUri, contentType, source, result.hi + 1, metadataHandler);
               }
             });
           }
@@ -211,7 +355,9 @@ abstract class ObjectTransferRequests implements ConnectionBase {
   Future<StorageObject> _uploadChunked(
       Uri uploadUri,
       Source source) {
+    throw new UnimplementedError("ObjectTransferRequests.uploadChunked");
 
+    /*
     var uploadId = uploadUri.queryParameters['upload_id'];
     logger.info("Resuming object upload (uploadId: $uploadId)");
     logger.info("Content length: ${source.length}");
@@ -226,7 +372,7 @@ abstract class ObjectTransferRequests implements ConnectionBase {
               new Range(sourcePos, sourcePos + block.length - 1),
               source.length);
           http.Request request = new http.Request("PUT", uploadUri)
-              ..headers[HttpHeaders.CONTENT_TYPE] = source.contentType.toString()
+              ..headers[HttpHeaders.CONTENT_TYPE] = mimeType
               ..headers[HttpHeaders.CONTENT_RANGE] = range.toString();
 
           logger.info("Sending chunk with ${range}\n"
@@ -262,17 +408,18 @@ abstract class ObjectTransferRequests implements ConnectionBase {
     }
 
     return sendNextBlock();
+    */
 
   }
 
-  Future<Range> _getUploadStatus(Uri uploadUri, Source source) {
+  Future<Range> _getUploadStatus(Uri uploadUri, Source source, metadataHandler) {
     return new Future.sync(() {
       var contentRange = new ContentRange(null, source.length);
       http.Request request = new http.Request("PUT", uploadUri)
           ..headers[HttpHeaders.CONTENT_RANGE] = contentRange.toString();
       return _sendAuthorisedRequest(request)
           .then(http.Response.fromStream)
-          .then(_handleResumableUploadStatus(source));
+          .then(_handleResumableUploadStatus(source, metadataHandler));
     });
   }
 
@@ -291,12 +438,12 @@ abstract class ObjectTransferRequests implements ConnectionBase {
    *
    * Otherwise, response is redirected to [:_handleResponse:]
    */
-  _ResponseHandler _handleResumableUploadStatus(Source source) {
+  _ResponseHandler _handleResumableUploadStatus(Source source, _ResponseHandler metadataHandler) {
     return (http.Response response) {
       return new Future.sync(() {
         if (response.statusCode == HttpStatus.OK || response.statusCode == HttpStatus.CREATED) {
           try {
-            return _handleStorageObjectResponse('*');
+            return metadataHandler(response);
           } on RPCException catch (e) {
             logger.severe(e.toString());
             throw e;
@@ -339,14 +486,12 @@ abstract class Source {
    */
   static const CHUNK_SIZE = 256 * 1024;
 
-  ContentType get contentType;
-
   /**
    * Create a new [Source] from the specified [:file:]
    */
-  static Future<Source> fromFile(File file, String contentType, { void onError(err, [StackTrace stackTrace]) }) =>
+  static Future<Source> fromFile(File file, { void onError(err, [StackTrace stackTrace]) }) =>
       file.open(mode: FileMode.READ)
-      .then((f) => new _FileSource(f, ContentType.parse(contentType), onError: onError));
+      .then((f) => new _FileSource(f, onError: onError));
 
   /*
   static Source fromStream(Stream<List<int>> stream, int contentLength, String contentType, {void onError(err, [StackTrace stackTrace])}) =>
@@ -406,7 +551,6 @@ abstract class SearchableSource extends Source {
 class _FileSource implements SearchableSource {
   static final CHUNK_SIZE = Source.CHUNK_SIZE;
 
-  final ContentType contentType;
   final RandomAccessFile _file;
 
   final Function onError;
@@ -415,7 +559,7 @@ class _FileSource implements SearchableSource {
   int _fileLength;
   int _filePos;
 
-  _FileSource(this._file, this.contentType, {this.onError});
+  _FileSource(this._file, {this.onError});
 
   int get length {
     if (_fileLength == null)

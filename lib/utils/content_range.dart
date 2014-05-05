@@ -42,7 +42,7 @@ class ContentRange {
   String toString() {
     StringBuffer sbuf = new StringBuffer()
         ..write('bytes ')
-        ..write(range != null ? range : '*')
+        ..write(range != null ? "${range.lo}-${range.hi}" : '*')
         ..write('/')
         ..write(length != null ? length : '*');
     return sbuf.toString();
@@ -77,5 +77,5 @@ class Range {
 
   int get hashCode => hash2(lo, hi);
 
-  String toString() => "$lo-$hi";
+  String toString() => "bytes=$lo-$hi";
 }
