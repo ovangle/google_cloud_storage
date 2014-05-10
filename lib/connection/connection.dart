@@ -2,11 +2,11 @@ library connection;
 
 import 'dart:async';
 import 'dart:convert' show UTF8, JSON;
-import 'dart:typed_data' show Uint8List;
-import 'dart:io';
+import 'dart:typed_data';
 import 'dart:math' as math;
 
 
+import 'package:collection/equality.dart' show ListEquality;
 import 'package:collection/wrappers.dart' show DelegatingMap;
 import 'package:crypto/crypto.dart' show MD5, CryptoUtils;
 import 'package:http/http.dart' as http;
@@ -14,12 +14,10 @@ import 'package:logging/logging.dart';
 import 'package:quiver/async.dart' show forEachAsync;
 import 'package:quiver/iterables.dart' show range;
 
-import 'package:google_oauth2_client/google_oauth2_console.dart' as oauth2;
-
 import '../api/api.dart';
 import '../utils/content_range.dart';
 import '../utils/either.dart';
-import '../utils/linkedlist.dart';
+import '../utils/http_utils.dart';
 import '../json/path.dart';
 import '../json/selector.dart';
 
@@ -44,6 +42,8 @@ const API_SCOPES =
             PermissionRole.OWNER: 'https://www.googleapis.com/auth/devstorage.full_control'
           };
 
+const _LIST_EQ = const ListEquality();
+
 const _JSON_CONTENT = 'application/json; charset=UTF-8';
 const _MULTIPART_CONTENT = 'multipart/related; boundary="content_boundary"';
 
@@ -64,46 +64,6 @@ const _RETRY_STATUS =
             HttpStatus.SERVICE_UNAVAILABLE,
             HttpStatus.GATEWAY_TIMEOUT
           ];
-
-
-
-class CloudStorageConnection extends ConnectionBase
-with BucketRequests,
-     ObjectRequests,
-     ObjectTransferRequests {
-
-  static Future<CloudStorageConnection> open(String projectNumber, String projectId, PermissionRole role,
-      { String serviceAccount, String pathToPrivateKey}) {
-
-    Future<String> _readPrivateKey(String path) =>
-        (path == null)
-        ? new Future.value()
-        : new File(path).readAsString();
-
-    return _readPrivateKey(pathToPrivateKey).then((privateKey) {
-      var scopes;
-      if (serviceAccount != null && pathToPrivateKey != null) {
-        scopes = [ 'https://www.googleapis.com/auth/userinfo.email',
-                   API_SCOPES[role]
-                 ].join(" ");
-      }
-      var console = new oauth2.ComputeOAuth2Console(
-          projectNumber,
-          iss: serviceAccount,
-          privateKey: privateKey,
-          scopes: scopes);
-
-      sendAuthorisedRequest(http.BaseRequest request) =>
-          console.withClient((client) => client.send(request));
-
-      return new CloudStorageConnection._(projectId, sendAuthorisedRequest);
-    });
-  }
-
-  CloudStorageConnection._(String projectId, Future<http.StreamedResponse> sendAuthorisedRequest(http.BaseRequest request)):
-    super._(projectId, sendAuthorisedRequest);
-}
-
 
 /**
  * An implementation of the basic functionality required
@@ -171,7 +131,7 @@ abstract class ConnectionBase {
    */
   Logger logger = new Logger("cloudstorage.connection");
 
-  ConnectionBase._(this.projectId, Future<http.StreamedResponse> this._sendAuthorisedRequest(http.BaseRequest request));
+  ConnectionBase(this.projectId, Future<http.StreamedResponse> this._sendAuthorisedRequest(http.BaseRequest request));
 
   /**
    * Submit a remote procedure call to the specified [:path:] with the
@@ -197,10 +157,6 @@ abstract class ConnectionBase {
     if (contentType == _JSON_CONTENT && body != null)
       request.bodyBytes = UTF8.encode(JSON.encode(body));
 
-    if (contentType == _MULTIPART_CONTENT) {
-      assert(body is List<_MultipartRequestContent>);
-      request.bodyBytes = _MultipartRequestContent.encodeBody(body);
-    }
     request.headers.addAll(headers);
     var md5Hash = (new MD5()..add(request.bodyBytes)).close();
     request.headers[HttpHeaders.CONTENT_MD5] = CryptoUtils.bytesToBase64(md5Hash);
@@ -338,8 +294,8 @@ abstract class ConnectionBase {
       _handleResponse(response)
       .then((response) {
 
-        var contentType = ContentType.parse(response.headers[HttpHeaders.CONTENT_TYPE]);
-        if (contentType.mimeType != "application/json") {
+        var contentType = response.headers[HttpHeaders.CONTENT_TYPE];
+        if (!contentType.startsWith("application/json")) {
           logger.severe("Expected JSON response from ${response.request}");
           throw new RPCException.expectedJSON(response);
         }
@@ -369,7 +325,7 @@ abstract class ConnectionBase {
  * a remote procedure call.
  */
 class RPCException implements Exception {
-  final http.Response response;
+  final http.BaseResponse response;
   final String message;
 
   int get statusCode => response.statusCode;
@@ -390,10 +346,20 @@ class RPCException implements Exception {
   RPCException.noRangeHeader(response):
     this(response, "Expected range header in response");
 
+  RPCException.noContentLengthHeader(response):
+    this(response, "Expected 'content-length' header in response");
+
   String toString() =>
       "Request to remote procedure call $method failed with status ${response.statusCode}\n"
       "endpoint: $url\n"
       "message: ${message}";
+}
+
+class ObjectTransferException implements Exception {
+  final String msg;
+  ObjectTransferException(this.msg);
+
+  toString() => msg;
 }
 
 /**
@@ -434,59 +400,7 @@ class _Query extends DelegatingMap<String,String> {
   }
 }
 
-/**
- * A section of a request body with content type `multipart/related`.
- */
-class _MultipartRequestContent {
-  static const CONTENT_BOUNDARY = 'content_boundary';
 
-  //'\r\n'
-  static const NEWLINE = const [0x0D, 0x0A];
-
-  //--content_boundary
-  static const MULTIPART_CONTENT_SEPARATOR =
-      const [ 0x2D, 0x2D, 0x63, 0x6F, 0x6E, 0x74, 0x65, 0x6E, 0x74, 0x5F,
-              0x62, 0x6F, 0x75, 0x6E, 0x64, 0x61, 0x72, 0x79
-            ];
-
-  //--content_boundary--
-  static const MULTIPART_CONTENT_TERMINATOR =
-      const [ 0x2D, 0x2D, 0x63, 0x6F, 0x6E, 0x74, 0x65, 0x6E, 0x74, 0x5F,
-              0x62, 0x6F, 0x75, 0x6E, 0x64, 0x61, 0x72, 0x79, 0x2D, 0x2D
-            ];
-
-  static List<int> encodeBody(List<_MultipartRequestContent> contentSegments) {
-    BytesBuilder builder = new BytesBuilder();
-    for (var contentSegment in contentSegments) {
-      builder
-        ..add(MULTIPART_CONTENT_SEPARATOR)
-        ..add(NEWLINE);
-      contentSegment.addTo(builder);
-    }
-    builder..add(MULTIPART_CONTENT_TERMINATOR);
-    return builder.toBytes();
-  }
-
-  /**
-   * Headers which apply to this section of the request.
-   */
-  final Map<String,String> headers = new Map<String,String>();
-
-  List<int> body;
-
-  void addTo(BytesBuilder builder) {
-
-    headers.forEach((k,v) {
-      builder..add(UTF8.encode("$k: $v"))..add(NEWLINE);
-    });
-
-    builder
-        ..add(NEWLINE)
-        ..add(body)
-        ..add(NEWLINE);
-
-  }
-}
 
 // FIXME: Workaround for quiver bug #125
 // forEachAsync doesn't complete if iterable is empty.
