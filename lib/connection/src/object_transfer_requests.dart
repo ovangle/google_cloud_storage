@@ -198,24 +198,21 @@ abstract class ObjectTransferRequests implements ObjectRequests {
     logger.info("Content length: ${source.length}");
     logger.info("Content range: $contentRange");
 
-    int pos = 0;
 
-    //Add the next chunk to the stream
-    addNextChunk() {
-      if (!source.moveNext()) {
-        assert(pos + contentRange.range.lo == source.length);
-        return request.sink.close();
-      }
-      return source.current()
+    //Add the next chunk to the stream.
+    //Seperate the source into chunks of size [_BUFFER_SIZE] to avoid
+    //loading the whole source into memory at once.
+    addChunkAt(int pos) {
+      if (pos >= source.length) return request.sink.close();
+      source.setPosition(pos);
+      return source.read(_BUFFER_SIZE)
           .then((bytes) {
-            print("range: ${pos}-${pos+bytes.length}");
-            pos += bytes.length;
-            request.sink.add(bytes);
-            return addNextChunk();
+              request.sink.add(bytes);
+              return addChunkAt(0 + _BUFFER_SIZE);
           });
     }
 
-    addNextChunk();
+    addChunkAt(0);
 
     resume(ContentRange range) => _resumeUploadAt(uploadUri, contentType, source, sourceMd5, range, metadataHandler);
 
