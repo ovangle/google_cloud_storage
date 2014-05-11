@@ -1,8 +1,5 @@
 part of connection;
 
-
-
-
 abstract class ObjectTransferRequests implements ObjectRequests {
 
   Stream<List<int>> downloadObject(
@@ -129,7 +126,7 @@ abstract class ObjectTransferRequests implements ObjectRequests {
         String projection: 'noAcl',
         String selector: '*'
       }) {
-    return source.md5Hash().then((hash) {
+    return source.md5().then((hash) {
       if (object is String) {
         object = new StorageObject(bucket, object, selector: selector);
       } else if (object is! StorageObject) {
@@ -167,6 +164,11 @@ abstract class ObjectTransferRequests implements ObjectRequests {
       });
     });
   }
+
+  /**
+   * The number of bytes to fetch from the buffer at each access.
+   */
+  static const int _BUFFER_SIZE = 256 * 1024;
 
 
   /**
@@ -306,116 +308,5 @@ abstract class ObjectTransferRequests implements ObjectRequests {
       }
     }
     return null;
-  }
-}
-
-/**
- * An interface which represents a generic searchable,
- * readable object.
- *
- * A [Source] always has a valid [:contentType:]
- */
-abstract class Source {
-
-  /**
-   * The size of each chunk to read from the [Source].
-   */
-  static const CHUNK_SIZE = 256 * 1024;
-
-  /**
-   * Get the length of the [Source] in bytes
-   */
-  int get length;
-
-  /**
-   * The start position in the [Source] of the current chunk
-   */
-  int get currentPosition;
-
-  /**
-   * An optional hash value used to verify the upload.
-   * Can be `null` if the upload need not be validated.
-   */
-  Future<List<int>> md5Hash();
-
-  /**
-   * Get the current chunk of data from the [Source].
-   * Every chunk (except the last) is expected to be a multiple of [CHUNK_SIZE]
-   * in length.
-   */
-  Future<List<int>> current();
-
-  /**
-   * Clear the current chunk.
-   * Returns `true` if this is the end of the [Source].
-   */
-  bool moveNext();
-
-  /**
-   * Close the source.
-   */
-  Future close();
-
-
-  /**
-   * An error handler for the source.
-   */
-  Function get onError;
-
-  /**
-   * Set the position in the [SearchableSource] at which
-   * to resume the upload.
-   */
-  void setPosition(int position);
-}
-
-class StringSource implements Source {
-  static const int CHUNK_SIZE = Source.CHUNK_SIZE;
-
-  int _pos = 0;
-  bool _initialized = false;
-  final String input;
-
-  StringSource(this.input);
-
-  Future<List<int>> md5Hash() =>
-      new Future.value(
-          (new MD5()..add(UTF8.encode(input)))
-          .close()
-      );
-
-  @override
-  Future close() => new Future.value();
-
-  @override
-  Future<List<int>> current() {
-    if (!_initialized || _pos >= input.length)
-      return new Future.value(null);
-    var endPos = math.min(_pos + CHUNK_SIZE, input.length);
-    return new Future.value(input.substring(_pos, endPos).runes);
-  }
-
-  @override
-  int get currentPosition => math.min(_pos, input.length);
-
-  @override
-  int get length => input.length;
-
-  @override
-  bool moveNext() {
-    if (!_initialized) {
-      return _initialized = true;
-    }
-    _pos += CHUNK_SIZE;
-    return (_pos < input.length);
-  }
-
-  // TODO: implement onError
-  @override
-  Function get onError => null;
-
-  @override
-  void setPosition(int position) {
-    _pos = position;
   }
 }

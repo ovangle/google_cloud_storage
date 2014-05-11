@@ -15,6 +15,7 @@ import 'package:quiver/async.dart' show forEachAsync;
 import 'package:quiver/iterables.dart' show range;
 
 import '../api/api.dart';
+import '../source/source_common.dart';
 import '../utils/content_range.dart';
 import '../utils/either.dart';
 import '../utils/http_utils.dart';

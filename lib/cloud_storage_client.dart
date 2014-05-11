@@ -5,5 +5,5 @@
 library file_storage_html;
 
 export 'api/api.dart';
+export 'source/source_client.dart';
 
-import 'connection/connection.dart';

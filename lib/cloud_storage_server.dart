@@ -10,9 +10,6 @@ library file_storage;
 
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
-
-import 'package:crypto/crypto.dart' show MD5;
 import 'package:google_oauth2_client/google_oauth2_console.dart' as oauth2;
 import 'package:http/http.dart' as http;
 
@@ -21,6 +18,7 @@ import 'connection/connection.dart';
 
 export 'api/api.dart';
 export 'connection/connection.dart';
+export 'source/source_server.dart';
 
 class CloudStorageConnection extends ConnectionBase
 with BucketRequests,
@@ -78,68 +76,3 @@ with BucketRequests,
 }
 
 
-/**
- * Files are searchable and can be uploaded in a single contiguous
- * chunk.
- */
-class FileSource implements Source {
-  static final CHUNK_SIZE = Source.CHUNK_SIZE;
-
-  final File _file;
-
-  final Function onError;
-
-  bool _started = false;
-  int _fileLength;
-  int _filePos;
-
-  FileSource(this._file, {this.onError});
-
-  int get length {
-    if (_fileLength == null)
-      _fileLength = _file.lengthSync();
-    return _fileLength;
-  }
-
-  int get currentPosition => _filePos != null ? math.min(_filePos, _fileLength) : null;
-
-  Future<List<int>> current() {
-    return _file.open(mode: FileMode.READ).then((f) {
-      return f.setPosition(_filePos)
-          .then((file) => file.read(CHUNK_SIZE))
-          .catchError(onError)
-          .whenComplete(() => f.close());
-    });
-  }
-
-  bool moveNext() {
-    if (!_started) {
-      _started = true;
-      return true;
-    }
-    _filePos += CHUNK_SIZE;
-    return _filePos < length;
-  }
-
-  void setPosition(int position) {
-    if (position < 0 || position >= _fileLength)
-      throw new RangeError.range(position, 0, _fileLength - 1);
-    _filePos = position;
-  }
-
-
-  @override
-  Future<List<int>> md5Hash() {
-    var md5 = new MD5();
-    var completer = new Completer();
-    _file.openRead().listen(
-        md5.add,
-        onError: completer.completeError,
-        onDone: () => completer.complete(md5.close())
-    );
-    return completer.future;
-  }
-
-  @override
-  Future close() => new Future.value();
-}
