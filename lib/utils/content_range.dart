@@ -51,6 +51,8 @@ class ContentRange {
 
 /**
  * A representation of a Http Range header.
+ *
+ * Ranges are specified inclusive of the start and end bytes.
  */
 class Range {
   static final Pattern _RANGE = new RegExp(r'bytes=([0-9]+)-([0-9]+)$');
@@ -66,6 +68,9 @@ class Range {
 
   final int lo;
   final int hi;
+
+  int get size => (hi + 1) - lo;
+  bool get isEmpty => lo == hi;
 
   Range(this.lo, this.hi) {
     if (lo == null || hi == null)
