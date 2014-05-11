@@ -58,6 +58,9 @@ class MockBlob extends Mock implements Blob {
   }
 
   int get size => input.length;
+
+  @override
+  String get type => null;
 }
 
 class MockFileReader extends Mock implements FileReader {
@@ -77,8 +80,113 @@ class MockFileReader extends Mock implements FileReader {
   }
 
   ByteBuffer result;
+
+  @override
+  void abort() {
+    throw new UnimplementedError(' abort');
+  }
+
+  @override
+  void addEventListener(String type, listener(Event event), [bool useCapture]) {
+    throw new UnimplementedError(' addEventListener');
+  }
+
+  @override
+  bool dispatchEvent(Event event) {
+    throw new UnimplementedError(' dispatchEvent');
+  }
+
+  @override
+  FileError get error => null;
+
+  @override
+  Events get on => null;
+
+  @override
+  Stream<ProgressEvent> get onAbort => null;
+
+  @override
+  Stream<ProgressEvent> get onLoadEnd => null;
+
+  @override
+  Stream<ProgressEvent> get onLoadStart => null;
+
+  @override
+  Stream<ProgressEvent> get onProgress => null;
+
+  @override
+  void readAsDataUrl(Blob blob) {
+    throw new UnimplementedError(' readAsDataUrl');
+  }
+
+  @override
+  void readAsText(Blob blob, [String encoding]) {
+    throw new UnimplementedError(' readAsText');
+  }
+
+  @override
+  int get readyState => null;
+
+  @override
+  void removeEventListener(String type, listener(Event event), [bool useCapture]) {
+    throw new UnimplementedError(' removeEventListener');
+  }
 }
 
 class MockProgressEvent extends Mock implements ProgressEvent {
   FileReader target;
+
+  @override
+  bool get bubbles => null;
+
+  @override
+  bool get cancelable => null;
+
+  @override
+  DataTransfer get clipboardData => null;
+
+  @override
+  EventTarget get currentTarget => null;
+
+  @override
+  bool get defaultPrevented => null;
+
+  @override
+  int get eventPhase => null;
+
+  @override
+  bool get lengthComputable => null;
+
+  @override
+  int get loaded => null;
+
+  @override
+  Element get matchingTarget => null;
+
+  @override
+  List<Node> get path => null;
+
+  @override
+  void preventDefault() {
+    throw new UnsupportedError('preventDefault');
+  }
+
+  @override
+  void stopImmediatePropagation() {
+    throw new UnimplementedError(' stopImmediatePropagation');
+  }
+
+  @override
+  void stopPropagation() {
+    throw new UnimplementedError('stopPropagation');
+  }
+
+  @override
+  int get timeStamp => null;
+
+  @override
+  int get total => null;
+
+  @override
+  String get type => null;
 }
