@@ -6,6 +6,9 @@ import 'dart:io';
 import 'package:quiver/async.dart';
 
 import '../api/api.dart';
+import '../connection/connection.dart';
+import '../source/source_common.dart';
+import '../utils/content_range.dart';
 
 part 'src/entry.dart';
 
@@ -20,7 +23,7 @@ class CloudFilesystem {
    * A connection to the cloud storage which holds metadata
    * about the
    */
-  final CloudStorageConnection connection;
+  final Connection connection;
   /**
    * The bucket at the root of the current filesystem
    */
@@ -31,22 +34,28 @@ class CloudFilesystem {
   //A cached version of the bucket at the root of the filesystem.
   StorageBucket _cachedBucket;
 
-  Future<StorageBucket> get _bucketMetadata {
-    if (_cachedBucket == null) {
-      return connection.getBucket(bucket)
-          .then((bucket) {
-            _cachedBucket = bucket;
-            return bucket;
-          })
-          .catchError((err) {
-            if (err is RPCException && err.statusCode == HttpStatus.NOT_FOUND) {
-              throw new FilesystemError.noRootExists(bucket);
-            }
-            throw err;
-          });
-    }
-    return new Future.value(_cachedBucket);
-  }
+  Future<StorageBucket> metadata() =>
+      connection.getBucket(bucket);
+}
+
+class PathError extends Error {
+  String msg;
+  String path;
+
+  PathError(this.msg, this.path);
+
+  PathError.invalidPath(String path):
+    this("Path must be specified as $_FS_DELIMITER delimited list of non-empty components.\n"
+          "and cannot contain a whitespace character", path);
+
+  PathError.invalidFolder(String path):
+    this("Folder name must end with $_FS_DELIMITER", path);
+
+  PathError.invalidFile(String path):
+    this("File name cannot end with $_FS_DELIMITER", path);
+
+  String toString() => "$msg: $path";
+
 }
 
 class FilesystemError extends Error {
@@ -63,6 +72,9 @@ class FilesystemError extends Error {
 
   FilesystemError.folderNotEmpty(String name):
     this(2, "Not empty");
+
+  FilesystemError.destinationExists(String path):
+    this(3, "Copy/move destination exists");
 
   String toString() => "Filesystem error ($errCode): $message";
 

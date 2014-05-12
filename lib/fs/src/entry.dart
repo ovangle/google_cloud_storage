@@ -1,12 +1,13 @@
 part of fs;
 
 abstract class Entry {
+
   final CloudFilesystem filesystem;
-  final String name;
+  final String path;
 
   Map<String,String> _cachedMetadata;
 
-  Entry(this.filesystem, this.name):
+  Entry(this.filesystem, this.path):
     this._cachedMetadata = {};
 
   static final _FOLDER_REGEXP = new RegExp(r'/.');
@@ -14,13 +15,13 @@ abstract class Entry {
    * The folder that contains the current entry.
    */
   Folder get parent =>
-      new Folder(filesystem, name.substring(0, name.lastIndexOf(_FOLDER_REGEXP)));
+      new Folder(filesystem, path.substring(0, path.lastIndexOf(_FOLDER_REGEXP)));
 
   Future<bool> exists() {
-    if (name == "/") return new Future.value(true);
+    if (path == _FS_DELIMITER) return new Future.value(true);
     return filesystem.connection.getObject(
         filesystem.bucket,
-        name,
+        path,
         selector: "name")
     .then((result) => true)
     .catchError(
@@ -34,7 +35,7 @@ abstract class Entry {
   Future setEntryProperty(String key, String value) {
     return filesystem.connection.updateObject(
         filesystem.bucket,
-        name,
+        path,
         (object) => object.metadata[key] = value,
         readSelector: "metadata",
         resultSelector: "metadata"
@@ -46,52 +47,71 @@ abstract class Entry {
       return new Future.value(_cachedMetadata[key]);
     return filesystem.connection.getObject(
         filesystem.bucket,
-        name,
+        path,
         selector: "metadata").then((object) {
       _cachedMetadata = object.metadata;
       return _cachedMetadata[key];
     });
   }
 
-  void _clearCaches() {
-    _cachedMetadata = {};
-  }
+  /**
+   * Get the google cloud storage metadata associated with the current
+   * [Entry].
+   *
+   * The metadata of '/' is always `null`.
+   */
+  Future<StorageObject> metadata() =>
+      path == _FS_DELIMITER
+          ? new Future.value()
+          : filesystem.connection.getObject(filesystem.bucket, path);
 
 
 
-
+  /**
+   * Delete the [Entry].
+   */
   Future<Entry> delete({bool recursive: false});
 
-  bool operator ==(Object other) => other is Entry && other.name == name;
-  int get hashCode => name.hashCode * 7;
+  bool operator ==(Object other) => other is Entry && other.path == path;
+  int get hashCode => path.hashCode * 7;
 }
 
 class Folder extends Entry {
 
-  Folder(filesystem, String name):
-    super(filesystem, name.endsWith(_FS_DELIMITER) ? name : name + _FS_DELIMITER);
+  Folder(filesystem, String path):
+    super(filesystem, path) {
+    _checkValidFolderPath(path);
+  }
 
   /**
    * List all the [Entry]s in the current folder.
    */
   Stream<Entry> list() {
-    return filesystem.connection.listBucketContents(
+    return filesystem.connection.listBucket(
         filesystem.bucket,
-        (this.name == _FS_DELIMITER ? "" : this.name),
+        prefix: (this.path == _FS_DELIMITER ? "" : this.path),
         delimiter: _FS_DELIMITER,
         selector: "name,contentType"
     )
     .map((prefixOrObject) =>
         prefixOrObject.fold(
             ifLeft: (prefix) => new Folder(filesystem, prefix),
-            ifRight: (obj) => new RemoteFile(filesystem, obj.name, obj.contentType)
+            ifRight: (obj) => new RemoteFile(filesystem, obj.path, obj.contentType)
         )
     )
     .where((obj) => obj != this);
   }
 
+
   Future<bool> get isEmpty => list().isEmpty;
 
+  /**
+   * Create the folder if it does not exist.
+   *
+   * If [:recursive:] is `true` then the parent object of the [Folder] will
+   * be created. Otherwise the future completes with a [FilesystemError]
+   * if the parent does not exist.
+   */
   Future<Folder> create({recursive: false}) {
     return exists().then((result) {
       if (result) {
@@ -100,32 +120,40 @@ class Folder extends Entry {
         return parent.exists().then((result) {
           if (!result) {
             if (recursive) return parent.create(recursive: true);
-            throw new FilesystemError.noSuchFolderOrFile(parent.name);
+            throw new FilesystemError.noSuchFolderOrFile(parent.path);
           }
         })
-        .then((_) => filesystem.connection.uploadObject(filesystem.bucket, name, 'text/plain', [], selector: "name"))
+        .then((_) => filesystem.connection.uploadObject(filesystem.bucket, path, 'text/plain', new ByteSource([]), selector: "name"))
         .then((obj) => new Folder(filesystem, obj.name));
       }
     });
-
   }
 
+  /**
+   * Deletes the folder from the remote filesystem.
+   *
+   * If [:recursive:] is `false` then also delete the contents of the [Folder].
+   * Otherwise, returns a future which completes with a [FilesystemError].
+   */
   @override
   Future<Folder> delete({recursive: false}) {
     return isEmpty.then((result) {
       if (!result) {
         if (recursive) {
           return list().toList()
-              .then((entries) => forEachAsync(entries, (entry) => entry.delete));
+              .then((entries) => forEachAsync(
+                  entries,
+                  (entry) => entry.delete(recursive: true))
+              );
         }
-        throw new FilesystemError.folderNotEmpty(name);
+        throw new FilesystemError.folderNotEmpty(path);
       }
     })
-    .then((_) => filesystem.connection.deleteObject(filesystem.bucket, name))
+    .then((_) => filesystem.connection.deleteObject(filesystem.bucket, path))
     .then((_) => this);
   }
 
-  String toString() => "Folder: $name";
+  String toString() => "Folder: $path";
 }
 
 class RemoteFile extends Entry {
@@ -134,87 +162,132 @@ class RemoteFile extends Entry {
    */
   final ContentType contentType;
 
-  var _cachedStorageObject;
 
-  RemoteFile(filesystem, name, String contentType):
-      super(filesystem, name),
-      this.contentType = ContentType.parse(contentType);
+  RemoteFile(filesystem, path, String contentType):
+      super(filesystem, path),
+      this.contentType = ContentType.parse(contentType) {
+    _checkValidFilePath(path);
+  }
 
   RemoteFile._from(RemoteFile file):
-    super(file.filesystem, file.name),
+    super(file.filesystem, file.path),
     this.contentType = file.contentType;
 
+
   /**
-   * Upload the storage object to the server. Will overwrite any existing file
-   * with the same name.
+   * writes the [RemoteFile] to the server, overwriting any existing
+   * content of the file.
    *
-   * Suitable for files of size up to `5MB`. For files of size >= 5MB, the resumable
-   * write function should be used instead.
+   * The file content is read from the given [Source].
    */
-  Future<RemoteFile> write(List<int> bytes) {
+  Future<RemoteFile> write(Source source) {
     return filesystem.connection.uploadObject(
         filesystem.bucket,
-        name,
+        path,
         contentType.toString(),
-        bytes,
+        source,
         selector: "name,contentType"
     ).then((obj) => new RemoteFile(filesystem, obj.name, obj.contentType));
   }
 
-  ResumableUploadSink writeResumable() {
-    StreamController controller = new StreamController<List<int>>();
-
-    ResumableUploadSink uploadSink = new ResumableUploadSink._(controller.sink);
-
-    filesystem.connection.resumableUploadObject(
+  /**
+   * Reads the content of the file
+   */
+  Stream<List<int>> read([int start_or_end, int end]) {
+    Range range = null;
+    if (start_or_end != null) {
+      if (start_or_end < 0) throw new RangeError.value(start_or_end);
+      if (end != null) {
+        if (end <= start_or_end) throw new RangeError.value(end);
+        //A [Range] includes the index of the end byte.
+        range = new Range(start_or_end, end - 1);
+      } else {
+        range = new Range(0, start_or_end - 1);
+      }
+    }
+    return filesystem.connection.downloadObject(
         filesystem.bucket,
-        name,
-        contentType.toString(),
-        controller.stream
-    )
-    //FIXME: This is plain wrong.
-    .then((result) => uploadSink.done)
-    .catchError(controller.addError);
-
-    return new ResumableUploadSink._(controller.sink);
+        path,
+        byteRange: range);
   }
 
-  Future<List<int>> read([int start, int end]) {
-    throw new UnimplementedError("RemoteFile.read");
+  /**
+   * Create a copy of the [RemoteFile] to the specified filesystem location.
+   * The destination does not necessarily need to be in the same fileysystem.
+   *
+   * Throws a [FilesystemError] if there is already an object at the specified
+   * location.
+   *
+   * Returns a [Future] which completes with the created file if none exists,
+   * or completes with a [FilesystemError] if the destination object exists.
+   */
+  Future<RemoteFile> copyTo(RemoteFile file) {
+    return file.exists().then((result) {
+      if (result) throw new FilesystemError.destinationExists(path);
+      return metadata().then((mdata) {
+      return filesystem.connection.copyObject(
+          filesystem.bucket,
+          this.path,
+          file.filesystem.bucket,
+          path,
+          selector: 'name,contentType');
+      })
+      .then((obj) => new RemoteFile(filesystem, obj.name, obj.contentType));
+    });
   }
 
-  @override
+  /**
+   * Move the [RemoteFile] to the specified fileysystem location.
+   * The destination does not necessarily need to be in the same [Filesystem]
+   * as the current file.
+   *
+   * Returns a [Future] which completes with the created file if none exists,
+   * or completes with a [FilesystemError] if the destination object exists.
+   */
+  Future<RemoteFile> moveTo(RemoteFile file) {
+    return copyTo(file)
+        .then((file) {
+          return delete().then((_) => file);
+        });
+  }
+
+  /**
+   * Delete the object from the filesystem.
+   */
   Future<RemoteFile> delete({bool recursive: false}) =>
       filesystem.connection.deleteObject(
           filesystem.bucket,
-          name)
+          path)
       .then((_) => this);
 
   Future<int> get length =>
-      filesystem.connection.getObject(filesystem.bucket, name, selector: "size")
+      filesystem.connection.getObject(filesystem.bucket, path, selector: "size")
       .then((result) => result.size);
 
-  String toString() => "RemoteFile: $name";
+  String toString() => "RemoteFile: $path";
 }
 
-class ResumableUploadSink implements StreamSink<List<int>> {
-  final StreamSink<List<int>> _sink;
+bool _isFolderPath(String path) => path.endsWith(_FS_DELIMITER);
 
-  ResumableUploadSink._(this._sink);
 
-  @override
-  void add(List<int> event) => _sink.add(event);
+/**
+ * A path is a '/' sepearated list of components, each of which cannot
+ * be empty and which cannot contain a whitespace character
+ */
+final Pattern _VALID_PATH = new RegExp(r'/[^\s/](/[^\s/]|)*/?$');
 
-  @override
-  void addError(errorEvent, [StackTrace stackTrace]) => _sink.addError(errorEvent, stackTrace);
 
-  @override
-  Future addStream(Stream<List<int>> stream) => _sink.addStream(stream);
+void _checkValidFolderPath(String path) {
+  if (_VALID_PATH.matchAsPrefix(path) == null)
+    throw new PathError.invalidPath(path);
+  if (!_isFolderPath(path))
+    throw new PathError.invalidFolder(path);
+}
 
-  @override
-  Future close() => _sink.close();
-
-  @override
-  Future get done => _sink.done;
+void _checkValidFilePath(String path) {
+  if (_VALID_PATH.matchAsPrefix(path) == null)
+    throw new PathError.invalidPath(path);
+  if (_isFolderPath(path))
+    throw new PathError.invalidFile(path);
 }
 
