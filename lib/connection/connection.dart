@@ -67,6 +67,20 @@ const _RETRY_STATUS =
           ];
 
 /**
+ * A [Connection] with all the appropriate
+ * request mixin classes.
+ */
+
+class Connection extends ConnectionBase with
+    BucketRequests,
+    ObjectRequests,
+    ObjectTransferRequests {
+  Connection(String projectId, Future<http.StreamedResponse> sendAuthorisedRequest(http.BaseRequest request)):
+    super(projectId, sendAuthorisedRequest);
+}
+
+
+/**
  * An implementation of the basic functionality required
  * to make a remote procedure call against google cloud storage.
  */

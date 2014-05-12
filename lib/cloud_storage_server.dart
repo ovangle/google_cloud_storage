@@ -20,10 +20,7 @@ export 'api/api.dart';
 export 'connection/connection.dart';
 export 'source/source_server.dart';
 
-class CloudStorageConnection extends ConnectionBase
-with BucketRequests,
-     ObjectRequests,
-     ObjectTransferRequests {
+class CloudStorageConnection extends Connection {
 
   /**
    * Open a new connection to the cloud storage server.
