@@ -49,17 +49,21 @@ abstract class Source {
 }
 
 /**
- * A [Source] which contains the bytes of a [String]
+ * A [Source] which is backed by a [String].
  */
-class StringSource implements Source {
+class StringSource extends ByteSource {
+  StringSource(String source, [String encoding = 'utf-8']):
+    super(Encoding.getByName(encoding).encode(source));
+}
 
-  final Encoding _encoding;
-  final String source;
+/**
+ * A [Source] which is backed by a list of bytes.
+ */
+class ByteSource implements Source {
+  final List<int> source;
   int _pos = 0;
 
-  StringSource(this.source, [String encoding = 'utf-8']):
-    this._encoding = Encoding.getByName(encoding);
-
+  ByteSource(this.source);
 
   @override
   int get length => source.length;
@@ -68,7 +72,7 @@ class StringSource implements Source {
   Future<List<int>> md5() {
     return new Future.sync(() {
       var hash = new MD5();
-      hash.add(_encoding.encode(source));
+      hash.add(source);
       return hash.close();
     });
   }
@@ -77,12 +81,10 @@ class StringSource implements Source {
   int get position => _pos;
 
   @override
-  Future<List<int>> read(int bytes) {
-    return new Future.sync(() {
-      var content = source.substring(_pos, math.min(_pos + bytes, length));
-      return _encoding.encode(content);
-    });
-  }
+  Future<List<int>> read(int bytes) =>
+      new Future.value(
+          source.sublist(_pos, math.min(_pos + bytes, length))
+      );
 
   @override
   void setPosition(int position) {
