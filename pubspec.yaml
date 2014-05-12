@@ -1,11 +1,12 @@
 name: google_cloud_storage
 version: 0.1.0
-description: A sample web application
+author: Thomas Stephenson <ovangle@gmail.com>
+description: A library for connecting, and interacting with the google cloud storage API
+homepage: https://github.com/ovangle/google_cloud_storage
 dependencies:
   collection: '>=0.9.0 <0.10.0'
-  google_oauth2_client:
-    path: /Users/ovangle/Programming/Dart/dart-google-oauth2-library
-  logging: any
-  quiver: any
+  google_oauth2_client: '>=0.3.7 <0.3.9'
+  logging: '>=0.9.1 <0.10.0'
+  quiver: '>=0.18.2 <0.19.0'
 dev_dependencies:
   unittest: any
