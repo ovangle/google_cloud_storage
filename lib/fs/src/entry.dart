@@ -1,21 +1,31 @@
 part of fs;
 
-abstract class Entry {
+/**
+ * A file or folder which exists on the google cloud servers.
+ */
+abstract class RemoteEntry {
 
   final CloudFilesystem filesystem;
   final String path;
 
   Map<String,String> _cachedMetadata;
 
-  Entry(this.filesystem, this.path):
+  factory RemoteEntry(CloudFilesystem filesystem, String path) {
+    if (_isFolderPath(path)) {
+      return new RemoteFolder(filesystem, path);
+    }
+    return new RemoteFile(filesystem, path);
+  }
+
+  RemoteEntry._(this.filesystem, this.path):
     this._cachedMetadata = {};
 
   static final _FOLDER_REGEXP = new RegExp(r'/.');
   /**
    * The folder that contains the current entry.
    */
-  Folder get parent =>
-      new Folder(filesystem, path.substring(0, path.lastIndexOf(_FOLDER_REGEXP)));
+  RemoteFolder get parent =>
+      new RemoteFolder(filesystem, path.substring(0, path.lastIndexOf(_FOLDER_REGEXP)));
 
   Future<bool> exists() {
     if (path == _FS_DELIMITER) return new Future.value(true);
@@ -56,7 +66,7 @@ abstract class Entry {
 
   /**
    * Get the google cloud storage metadata associated with the current
-   * [Entry].
+   * [RemoteEntry].
    *
    * The metadata of '/' is always `null`.
    */
@@ -68,35 +78,35 @@ abstract class Entry {
 
 
   /**
-   * Delete the [Entry].
+   * Delete the [RemoteEntry].
    */
-  Future<Entry> delete({bool recursive: false});
+  Future<RemoteEntry> delete({bool recursive: false});
 
-  bool operator ==(Object other) => other is Entry && other.path == path;
+  bool operator ==(Object other) => other is RemoteEntry && other.path == path;
   int get hashCode => path.hashCode * 7;
 }
 
-class Folder extends Entry {
+class RemoteFolder extends RemoteEntry {
 
-  Folder(filesystem, String path):
-    super(filesystem, path) {
+  RemoteFolder(filesystem, String path):
+    super._(filesystem, path) {
     _checkValidFolderPath(path);
   }
 
   /**
-   * List all the [Entry]s in the current folder.
+   * List all the [RemoteEntry]s in the current folder.
    */
-  Stream<Entry> list() {
+  Stream<RemoteEntry> list() {
     return filesystem.connection.listBucket(
         filesystem.bucket,
         prefix: (this.path == _FS_DELIMITER ? "" : this.path),
         delimiter: _FS_DELIMITER,
-        selector: "name,contentType"
+        selector: "name"
     )
     .map((prefixOrObject) =>
         prefixOrObject.fold(
-            ifLeft: (prefix) => new Folder(filesystem, prefix),
-            ifRight: (obj) => new RemoteFile(filesystem, obj.path, obj.contentType)
+            ifLeft: (prefix) => new RemoteFolder(filesystem, prefix),
+            ifRight: (obj) => new RemoteFile(filesystem, obj.path)
         )
     )
     .where((obj) => obj != this);
@@ -108,11 +118,11 @@ class Folder extends Entry {
   /**
    * Create the folder if it does not exist.
    *
-   * If [:recursive:] is `true` then the parent object of the [Folder] will
+   * If [:recursive:] is `true` then the parent object of the [RemoteFolder] will
    * be created. Otherwise the future completes with a [FilesystemError]
    * if the parent does not exist.
    */
-  Future<Folder> create({recursive: false}) {
+  Future<RemoteFolder> create({recursive: false}) {
     return exists().then((result) {
       if (result) {
         return this;
@@ -124,7 +134,7 @@ class Folder extends Entry {
           }
         })
         .then((_) => filesystem.connection.uploadObject(filesystem.bucket, path, 'text/plain', new ByteSource([]), selector: "name"))
-        .then((obj) => new Folder(filesystem, obj.name));
+        .then((obj) => new RemoteFolder(filesystem, obj.name));
       }
     });
   }
@@ -132,11 +142,11 @@ class Folder extends Entry {
   /**
    * Deletes the folder from the remote filesystem.
    *
-   * If [:recursive:] is `false` then also delete the contents of the [Folder].
+   * If [:recursive:] is `false` then also delete the contents of the [RemoteFolder].
    * Otherwise, returns a future which completes with a [FilesystemError].
    */
   @override
-  Future<Folder> delete({recursive: false}) {
+  Future<RemoteFolder> delete({recursive: false}) {
     return isEmpty.then((result) {
       if (!result) {
         if (recursive) {
@@ -156,22 +166,16 @@ class Folder extends Entry {
   String toString() => "Folder: $path";
 }
 
-class RemoteFile extends Entry {
-  /**
-   * The content type of the file.
-   */
-  final ContentType contentType;
+class RemoteFile extends RemoteEntry {
 
 
-  RemoteFile(filesystem, path, String contentType):
-      super(filesystem, path),
-      this.contentType = ContentType.parse(contentType) {
+  RemoteFile(filesystem, path):
+      super._(filesystem, path)  {
     _checkValidFilePath(path);
   }
 
   RemoteFile._from(RemoteFile file):
-    super(file.filesystem, file.path),
-    this.contentType = file.contentType;
+    super._(file.filesystem, file.path);
 
 
   /**
@@ -179,15 +183,16 @@ class RemoteFile extends Entry {
    * content of the file.
    *
    * The file content is read from the given [Source].
+   * [:contentType:] is the mime type of the source.
    */
-  Future<RemoteFile> write(Source source) {
+  Future<RemoteFile> write(Source source, String contentType) {
     return filesystem.connection.uploadObject(
         filesystem.bucket,
         path,
-        contentType.toString(),
+        contentType,
         source,
-        selector: "name,contentType"
-    ).then((obj) => new RemoteFile(filesystem, obj.name, obj.contentType));
+        selector: "name"
+    ).then((obj) => new RemoteFile(filesystem, obj.name));
   }
 
   /**
@@ -230,9 +235,9 @@ class RemoteFile extends Entry {
           this.path,
           file.filesystem.bucket,
           path,
-          selector: 'name,contentType');
+          selector: 'name');
       })
-      .then((obj) => new RemoteFile(filesystem, obj.name, obj.contentType));
+      .then((obj) => new RemoteFile(filesystem, obj.name));
     });
   }
 

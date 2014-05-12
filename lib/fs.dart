@@ -1,22 +1,43 @@
+/**
+ * Provides an API which provides filesystem like access to objects
+ * within a specific bucket.
+ *
+ * Compatible with both the client and server versions of the library,
+ * provides virtual folders and files which can be interacted with in
+ * a manner which loosely resembles the `'dart:io'` filesystem API.
+ */
 library fs;
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:quiver/async.dart';
 
-import '../api/api.dart';
-import '../connection/connection.dart';
-import '../source/source_common.dart';
-import '../utils/content_range.dart';
+import 'api/api.dart';
+import 'connection/connection.dart';
+import 'source/source_common.dart';
+import 'utils/content_range.dart';
+import 'utils/http_utils.dart';
 
-part 'src/entry.dart';
+part 'fs/src/entry.dart';
 
 const _FS_DELIMITER = "/";
 
 /**
- * A [CloudFilesystem] is a filesystem that resembles
- * the API exported by `dart:io`, but where
+ * A [CloudFilesystem] is a virtual filesystem which is overlayed over
+ * the contents of a particular bucket which exists on the cloud storage
+ * servers.
+ *
+ * There are two types of entity on the filesystem:
+ * - [RemoteFolder]s, which represent virtual folders within the bucket.
+ * Each [RemoteFolder] (except '/') is assigned a 0-byte object with
+ * mime type `text/plain` on the cloud servers when created.
+ * - [RemoteFile]s, which are the file type objects stored within the filesystem.
+ *
+ * Each [Entry] is assigned a [:POSIX:] style path which specifies
+ * how to resolve the object from the root of the filesystem. All paths are
+ * specified as absolute, '/' delimited [String]s and a valid path must
+ * - Not contain a whitespace character
+ * - Not contain an empty component.
  */
 class CloudFilesystem {
   /**

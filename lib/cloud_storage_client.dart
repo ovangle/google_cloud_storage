@@ -16,28 +16,26 @@ export 'source/source_client.dart';
 class CloudStorageConnection extends Connection {
 
 
+  /**
+   * Create a new connection to the google cloud storage library with the
+   * given [:client:].
+   *
+   * [:projectId:] is the google assigned identifier of the owner of the
+   * buckets to connect to.
+   * [GoogleOAuth2] is an oauth2 context which can authenticate the client
+   * with the cloud storage API.
+   */
   factory CloudStorageConnection(
       String projectId,
-      List<String> scopes,
-      { tokenLoaded(oauth2.Token token),
-        bool autoLogin: false,
-        String approvalPrompt
-      }) {
-    oauth2.GoogleOAuth2 context = new oauth2.GoogleOAuth2(
-        projectId,
-        scopes,
-        tokenLoaded: tokenLoaded,
-        autoLogin: autoLogin,
-        approval_prompt: approvalPrompt);
+      oauth2.GoogleOAuth2 context) {
     sendAuthorisedRequest(http.BaseRequest request) {
-      context.login().then((token) {
+      return context.login().then((token) {
         request.headers.addAll(oauth2.getAuthorizationHeaders(token.type, token.data));
         return request.send();
       });
     };
     return new CloudStorageConnection._(projectId, sendAuthorisedRequest);
   }
-
 
   CloudStorageConnection._(String projectId, Future<http.BaseResponse> sendAuthorisedRequest(http.BaseRequest request)) :
       super(projectId, sendAuthorisedRequest);

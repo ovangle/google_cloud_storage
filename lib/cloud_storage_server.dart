@@ -29,7 +29,7 @@ class CloudStorageConnection extends Connection {
    *
    * If connecting via a service account, the following must be also be provided
    * - A [PermissionRole] which indicates the level of access the service account has been granted
-   *   to the cloud storage account
+   *   to the cloud storage account. Defaults to `READER` access.
    * - The email of the service account
    * - A file system path to a private key file in `.pem` format which can be used
    *   to authenticate the service account with the datastore.
@@ -50,7 +50,7 @@ class CloudStorageConnection extends Connection {
       var scopes;
       if (serviceAccount != null && pathToPrivateKey != null) {
         if (role == null)
-          throw 'A role must be provided';
+          role = PermissionRole.READER;
         scopes = [ 'https://www.googleapis.com/auth/userinfo.email',
                    API_SCOPES[role]
                  ].join(" ");

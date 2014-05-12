@@ -75,7 +75,7 @@ class Connection extends ConnectionBase with
     BucketRequests,
     ObjectRequests,
     ObjectTransferRequests {
-  Connection(String projectId, Future<http.StreamedResponse> sendAuthorisedRequest(http.BaseRequest request)):
+  Connection(String projectId, Future<http.BaseResponse> sendAuthorisedRequest(http.BaseRequest request)):
     super(projectId, sendAuthorisedRequest);
 }
 
@@ -146,7 +146,7 @@ abstract class ConnectionBase {
    */
   Logger logger = new Logger("cloudstorage.connection");
 
-  ConnectionBase(this.projectId, Future<http.StreamedResponse> this._sendAuthorisedRequest(http.BaseRequest request));
+  ConnectionBase(this.projectId, Future<http.BaseResponse> this._sendAuthorisedRequest(http.BaseRequest request));
 
   /**
    * Submit a remote procedure call to the specified [:path:] with the
