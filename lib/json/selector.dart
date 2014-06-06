@@ -62,8 +62,7 @@ abstract class Selector {
   Selector get root => parent == null ? this : parent.root;
 
   List<Selector> get _ancestors =>
-      ((parent == null ? [] : parent._ancestors) as List)
-      ..add(this);
+      ((parent == null ? [] : parent._ancestors) as List)..add(this);
 
   /**
    * Check whether the provided `path` is in the selection defined by `this`.
