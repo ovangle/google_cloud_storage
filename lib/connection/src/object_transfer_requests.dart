@@ -1,45 +1,46 @@
 part of connection;
 
+/**
+ * The number of bytes to fetch from the buffer at each access.
+ */
+const int _BUFFER_SIZE = 5 * 1024 * 1024;
+
 abstract class ObjectTransferRequests implements ObjectRequests {
 
   Stream<List<int>> downloadObject(
-       String bucket,
-       String object,
-       { int generation,
-         int ifGenerationMatch,
-         int ifGenerationNotMatch,
-         int ifMetagenerationMatch,
-         int ifMetagenerationNotMatch,
-         Range byteRange
-       }) {
-     var query = new _Query(projectId)
-         ..['generation'] = generation
-         ..['ifGenerationMatch'] = ifGenerationMatch
-         ..['ifGenerationNotMatch'] = ifMetagenerationMatch
-         ..['ifMetagenerationMatch'] = ifMetagenerationMatch
-         ..['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch
-         ..['alt'] = 'media';
-     object = _urlEncode(object);
+      String bucket,
+      String object,
+      { int generation,
+        int ifGenerationMatch,
+        int ifGenerationNotMatch,
+        int ifMetagenerationMatch,
+        int ifMetagenerationNotMatch,
+        Range byteRange
+      }) {
+    var query = new _Query(projectId)
+        ..['generation'] = generation
+        ..['ifGenerationMatch'] = ifGenerationMatch
+        ..['ifGenerationNotMatch'] = ifMetagenerationMatch
+        ..['ifMetagenerationMatch'] = ifMetagenerationMatch
+        ..['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch
+        ..['alt'] = 'media';
+    object = _urlEncode(object);
 
-     var url = _platformUrl("/b/$bucket/o/$object", query);
+    var url = _platformUrl("/b/$bucket/o/$object", query);
 
-     return _downloadObject(url, byteRange);
-   }
+    return _downloadObject(url, byteRange);
+ }
 
-
-
-  Stream<List<int>> _downloadObject(Uri path, Range range) {
-    var request = new http.Request("GET", path)
-        ..headers[HttpHeaders.RANGE] = range.toString();
+  Stream<List<int>> _downloadObject(Uri url, Range range) {
+    var rpc = new _RemoteProcedureCall(url, "GET",
+        headers: {HttpHeaders.RANGE: range.toString() }
+    );
 
     StreamController controller = new StreamController<List<int>>();
 
-    _sendAuthorisedRequest(request)
-        .then(_handleResponse)
+    _sendAuthorisedRequest(rpc.asRequest())
         .then((http.StreamedResponse response) {
-      logger.info("here");
-      logger.info(response.headers.toString());
-      var expectedMd5Hash = this._expectedMd5Header(response.headers);
+      var expectedMd5Hash = _parseMd5Header(response.headers);
 
       var contentLength = response.contentLength;
 
@@ -59,7 +60,7 @@ abstract class ObjectTransferRequests implements ObjectRequests {
           logger.warning("Encountered error when reading response stream\n"
                                  "Resuming", err, stackTrace);
          Range range = new Range(counter + 1, contentLength - 1);
-         _downloadObject(path, range).listen(
+         _downloadObject(url, range).listen(
              addBytes,
              onError: controller.addError,
              onDone: controller.close);
@@ -67,7 +68,7 @@ abstract class ObjectTransferRequests implements ObjectRequests {
         },
         onDone: () {
           controller.close();
-          // Check the value of the hash we built while downloading the object
+          // Compare the value of the hash we built while downloading the object
           // to the one provided in the header
           if (expectedMd5Hash != null) {
             var actualHash = new Uint8List.fromList(md5Hash.close());

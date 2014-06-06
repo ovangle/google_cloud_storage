@@ -48,7 +48,7 @@ const _LIST_EQ = const ListEquality();
 const _JSON_CONTENT = 'application/json; charset=UTF-8';
 const _MULTIPART_CONTENT = 'multipart/related; boundary="content_boundary"';
 
-typedef Future<dynamic> _ResponseHandler(http.BaseResponse response);
+typedef Future<dynamic> _ResponseHandler(_RemoteProcedureCall rpc, http.BaseResponse response);
 
 /**
  * A pseudo random number generator.
@@ -166,21 +166,15 @@ abstract class ConnectionBase {
 
     var url =
         (isUploadUrl ? _platformUploadUrl : _platformUrl)(path, query);
-    http.Request request = new http.Request(method, url);
 
-    var contentType = headers[HttpHeaders.CONTENT_TYPE];
-    if (contentType == _JSON_CONTENT && body != null)
-      request.bodyBytes = UTF8.encode(JSON.encode(body));
+    var rpc = new _RemoteProcedureCall(
+        (isUploadUrl ? _platformUploadUrl : _platformUrl)(path, query),
+        method,
+        headers: headers,
+        body: body
+    );
 
-    request.headers.addAll(headers);
-    var md5Hash = (new MD5()..add(request.bodyBytes)).close();
-    request.headers[HttpHeaders.CONTENT_MD5] = CryptoUtils.bytesToBase64(md5Hash);
-
-    logger.info("Submitting remote procedure call ($request)");
-
-    return _sendAuthorisedRequest(request)
-        .then(http.Response.fromStream)
-        .then(handler);
+    return _sendAuthorisedRequest(rpc.asRequest()).then((response) => handler(rpc, response));
   }
 
   /**
@@ -272,23 +266,24 @@ abstract class ConnectionBase {
    * of retries). Otherwise, check that the status code is in the 20x range
    * and throw an exception if it isn't.
    */
-  Future<http.Response> _handleResponse(http.BaseResponse response, [int retryCount=0]) {
+  Future<http.Response> _handleResponse(_RemoteProcedureCall rpc, http.BaseResponse response, [int retryCount=0]) {
 
     Future<dynamic> resendRpcWithDelay(http.BaseResponse response, [int retryCount=0]) {
         //The delay is calculated as (2^retryCount + random # of milliseconds)
         Duration delay = new Duration(seconds: math.pow(2, retryCount), milliseconds: _random.nextInt(1000));
-        return new Future.delayed(delay, () {
-          _sendAuthorisedRequest(response.request)
-              .then(http.Response.fromStream)
-              .then((response) => _handleResponse(response, retryCount + 1));
-        });
-      }
+        return new Future.delayed(
+            delay,
+            () => _sendAuthorisedRequest(rpc.asRequest()).then((response) => _handleResponse(rpc, response, retryCount + 1))
+        );
+    }
 
 
     if (_RETRY_STATUS.contains(response.statusCode) &&
         retryCount < maxRetryRequests) {
-      logger.warning("Remote procedure call to ${response.request.method} ${response.request.url} failed with status ${response.statusCode}");
-      logger.warning("Retrying... (retry count: $retryCount)");
+      logger.warning(
+          "Remote procedure call to ${response.request.method} ${response.request.url} "
+          "failed with status ${response.statusCode}\n"
+          "Retrying... (retry count: $retryCount of $maxRetryRequests)");
       return resendRpcWithDelay(response, retryCount);
     }
 
@@ -305,8 +300,8 @@ abstract class ConnectionBase {
   /**
    * Handle a JSON encoded response
    */
-  Future<Map<String,dynamic>> _handleJsonResponse(http.Response response) =>
-      _handleResponse(response)
+  Future<Map<String,dynamic>> _handleJsonResponse(_RemoteProcedureCall rpc, http.Response response) =>
+      _handleResponse(rpc, response)
       .then((response) {
 
         var contentType = response.headers[HttpHeaders.CONTENT_TYPE];
@@ -321,8 +316,8 @@ abstract class ConnectionBase {
   /**
    * Handle a response which is expected to return a NO_CONTENT status.
    */
-  Future _handleEmptyResponse(http.Response response) =>
-      _handleResponse(response)
+  Future _handleEmptyResponse(_RemoteProcedureCall rpc, http.Response response) =>
+      _handleResponse(rpc, response)
       .then((response) {
         if (response.statusCode != HttpStatus.NO_CONTENT) {
           logger.severe("Expected empty response from ${response.request}");
@@ -415,6 +410,37 @@ class _Query extends DelegatingMap<String,String> {
   }
 }
 
+/**
+ * A model of a (retryable) remote procedure call to
+ * a service endpoint
+ */
+class _RemoteProcedureCall {
+  final Uri url;
+
+  final String method;
+  final Map<String,String> headers;
+  final body;
+
+  _RemoteProcedureCall(
+      Uri this.url,
+      String this.method,
+      { this.headers: const {},
+        this.body
+      });
+
+  http.Request asRequest() {
+    http.Request request = new http.Request(method, url);
+
+    var contentType = headers[HttpHeaders.CONTENT_TYPE];
+    if (contentType.startsWith('application/json')) {
+      request.body = JSON.encode(body);
+    }
+
+    request.headers.addAll(headers);
+
+    return request;
+  }
+}
 
 
 // FIXME: Workaround for quiver bug #125

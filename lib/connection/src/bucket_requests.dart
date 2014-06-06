@@ -233,8 +233,8 @@ abstract class BucketRequests implements ConnectionBase {
    * a single [StorageBucket] (with fields selected by the given [:selector:])
    */
   _ResponseHandler _handleStorageBucketResponse(String selector) {
-    return (http.Response response) =>
-        _handleJsonResponse(response)
+    return (_RemoteProcedureCall rpc, http.BaseResponse response) =>
+        _handleJsonResponse(rpc, response)
         .then((json) => new StorageBucket.fromJson(json, selector: selector));
   }
 
