@@ -52,7 +52,7 @@ class ContentRange {
 /**
  * A representation of a Http Range header.
  *
- * Ranges are specified inclusive of the start and end bytes.
+ * NOTE: According to the W3C specification, a range is specified inclusive of the start and end bytes.
  */
 class Range {
   static final Pattern _RANGE = new RegExp(r'bytes=([0-9]+)-([0-9]+)$');

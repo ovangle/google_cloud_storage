@@ -16,7 +16,7 @@ packages:
   collection:
     description: collection
     source: hosted
-    version: "0.9.2"
+    version: "0.9.3+1"
   crypto:
     description: crypto
     source: hosted
@@ -28,11 +28,15 @@ packages:
   google_oauth2_client:
     description: google_oauth2_client
     source: hosted
-    version: "0.3.7"
+    version: "0.3.8"
   http:
     description: http
     source: hosted
-    version: "0.9.2+3"
+    version: "0.11.1+1"
+  http_parser:
+    description: http_parser
+    source: hosted
+    version: "0.0.2+3"
   json_web_token:
     description: json_web_token
     source: hosted
@@ -44,19 +48,19 @@ packages:
   matcher:
     description: matcher
     source: hosted
-    version: "0.10.0"
+    version: "0.10.0+2"
   mock:
     description: mock
     source: hosted
-    version: "0.10.0+1"
+    version: "0.11.0+1"
   oauth2:
     description: oauth2
     source: hosted
-    version: "0.9.2"
+    version: "0.9.3"
   path:
     description: path
     source: hosted
-    version: "1.1.0"
+    version: "1.2.1"
   quiver:
     description: quiver
     source: hosted
@@ -65,11 +69,19 @@ packages:
     description: rsa_pkcs
     source: hosted
     version: "0.1.1"
+  source_maps:
+    description: source_maps
+    source: hosted
+    version: "0.9.1"
   stack_trace:
     description: stack_trace
     source: hosted
-    version: "0.9.3+1"
+    version: "1.0.0"
+  string_scanner:
+    description: string_scanner
+    source: hosted
+    version: "0.0.2"
   unittest:
     description: unittest
     source: hosted
-    version: "0.10.1+2"
+    version: "0.11.0+1"
