@@ -204,7 +204,7 @@ class StorageObject extends StorageEntry {
   /**
    * User provided metadata for the object.
    */
-  Map<String,String> get metadata => getField("metadata");
+  Map<String,String> get metadata => getField("metadata", defaultValue: () => {});
 
   /**
    * The owner of the object. This will always be the uploader of the object.

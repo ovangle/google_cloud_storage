@@ -120,10 +120,15 @@ class JsonObject {
     return hasField;
   }
 
-  dynamic getField(String name) {
+  dynamic getField(String name, {dynamic defaultValue()}) {
     if (!_hasField(new FieldPath(name)))
       throw new NotInSelectionError(this, name);
-    return _absolutePath(name).getValue(_rootJson);
+    var value = _absolutePath(name).getValue(_rootJson);
+    if (value == null && defaultValue != null) {
+      value = defaultValue();
+      setField(name, value);
+    }
+    return value;
   }
 
   void setField(String name, dynamic value) {
