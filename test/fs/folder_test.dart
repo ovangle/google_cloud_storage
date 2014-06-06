@@ -46,7 +46,7 @@ void main() {
         expect(contents,
             unorderedEquals([
                 new RemoteFolder(fs, 'folder1/subfolder1/'),
-                new RemoteFile(fs, 'folder1/file1', 'text/plain')
+                new RemoteFile(fs, 'folder1/file1')
             ])
         );
       });
