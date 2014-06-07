@@ -139,6 +139,8 @@ class JsonObject {
     _absolutePath(name).setValue(_rootJson, value);
   }
 
+  toString() => toJson().toString();
+
 }
 
 class JsonList<T extends JsonObject> extends ListBase<T> {
