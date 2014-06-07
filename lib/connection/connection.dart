@@ -300,9 +300,8 @@ abstract class ConnectionBase {
   /**
    * Handle a JSON encoded response
    */
-  Future<Map<String,dynamic>> _handleJsonResponse(_RemoteProcedureCall rpc, http.Response response) =>
-      _handleResponse(rpc, response)
-      .then((response) {
+  Future<Map<String,dynamic>> _handleJsonResponse(_RemoteProcedureCall rpc, http.BaseResponse response) =>
+      _handleResponse(rpc, response).then((response) {
 
         var contentType = response.headers[HttpHeaders.CONTENT_TYPE];
         if (!contentType.startsWith("application/json")) {
@@ -316,7 +315,7 @@ abstract class ConnectionBase {
   /**
    * Handle a response which is expected to return a NO_CONTENT status.
    */
-  Future _handleEmptyResponse(_RemoteProcedureCall rpc, http.Response response) =>
+  Future _handleEmptyResponse(_RemoteProcedureCall rpc, http.BaseResponse response) =>
       _handleResponse(rpc, response)
       .then((response) {
         if (response.statusCode != HttpStatus.NO_CONTENT) {
@@ -359,6 +358,9 @@ class RPCException implements Exception {
   RPCException.noContentLengthHeader(response):
     this(response, "Expected 'content-length' header in response");
 
+  RPCException.noLocationHeader(response):
+    this(response, 'Expected \'location\' header in response');
+
   String toString() =>
       "Request to remote procedure call $method failed with status ${response.statusCode}\n"
       "endpoint: $url\n"
@@ -385,6 +387,8 @@ class _Query extends DelegatingMap<String,String> {
   void addAll(Map<String,dynamic> other) {
     other.forEach((k,v) => this[k] = v);
   }
+
+  //TODO: Projection should be an enum.
 
   @override
   void operator []=(String key, dynamic value) {
@@ -419,27 +423,43 @@ class _RemoteProcedureCall {
 
   final String method;
   final Map<String,String> headers;
-  final body;
+  String body = null;
 
   _RemoteProcedureCall(
       Uri this.url,
       String this.method,
       { this.headers: const {},
-        this.body
-      });
+        body
+      }) {
+    var contentType = headers[HttpHeaders.CONTENT_TYPE];
+    if (contentType != null && contentType.startsWith('application/json')) {
+      this.body = JSON.encode(body);
+    }
+  }
+
+  _RemoteProcedureCall.fromJson(Map<String,dynamic> json):
+    url = Uri.parse(json['url']),
+    method = json['method'],
+    headers = json['headers'],
+    body = json['body'];
 
   http.Request asRequest() {
     http.Request request = new http.Request(method, url);
 
-    var contentType = headers[HttpHeaders.CONTENT_TYPE];
-    if (contentType.startsWith('application/json')) {
-      request.body = JSON.encode(body);
-    }
+    if (body != null)
+      request.body = body;
 
     request.headers.addAll(headers);
 
     return request;
   }
+
+  Map<String,dynamic> toJson() =>
+      { 'url': url.toString(),
+        'method': method,
+        'headers': headers,
+        'body': body
+      };
 }
 
 
