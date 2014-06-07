@@ -1,5 +1,5 @@
 name: google_cloud_storage
-version: 0.1.0+1
+version: 0.2.0
 author: Thomas Stephenson <ovangle@gmail.com>
 description: A library for connecting, and interacting with the google cloud storage API
 homepage: https://github.com/ovangle/google_cloud_storage
