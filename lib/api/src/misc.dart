@@ -135,7 +135,8 @@ class Lifecycle extends JsonObject {
           this, "rule",
           (path) => new LifecycleRule._delegate(this, path));
 
-  Lifecycle._delegate(JsonObject obj, var path):super.delegate(obj, path);
+  Lifecycle._delegate(JsonObject obj, var path, {String selector: "*"}):
+    super.delegate(obj, path, selector: selector);
 }
 
 class LifecycleRule extends JsonObject {
@@ -268,7 +269,7 @@ class CorsConfiguration extends JsonObject {
   CorsConfiguration._(Map<String,dynamic> json, {String selector: "*"}):
     super(json, selector: selector);
 
-  CorsConfiguration._delegate(JsonObject obj, String field, {String selector: "*"}):
+  CorsConfiguration._delegate(JsonObject obj, /* String | Path */ field, {String selector: "*"}):
     super.delegate(obj, field, selector: selector);
 }
 
@@ -291,7 +292,7 @@ class LoggingConfiguration extends JsonObject {
 
   LoggingConfiguration(): super({});
   LoggingConfiguration._(Map<String,dynamic> json, {String selector: "*"}): super(json, selector: selector);
-  LoggingConfiguration._delegate(JsonObject obj, var path): super.delegate(obj, path);
+  LoggingConfiguration._delegate(JsonObject obj, var path, {String selector: "*"}): super.delegate(obj, path, selector: selector);
 }
 
 class StorageClass {

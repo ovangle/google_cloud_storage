@@ -7,7 +7,7 @@ abstract class StorageEntry extends JsonObject {
   List<BucketAccessControls> get acl =>
       new JsonList<BucketAccessControls>(
           this, "acl",
-          (path) => new BucketAccessControls._delegate(this, "acl"));
+          (path) => new BucketAccessControls._delegate(this, path));
 
   /**
    * The name of the entry.
@@ -57,8 +57,11 @@ class StorageBucket extends StorageEntry {
    */
   List<CorsConfiguration> get cors =>
       new JsonList(
-          this, "posts",
-          (path) => new CorsConfiguration._delegate(this, "path"));
+          this, "cors",
+          (path) {
+      print("path: $path");
+      return new CorsConfiguration._delegate(this, path);
+  });
 
   /**
    * The default access controls for objects in this [StorageBucket]
@@ -66,8 +69,8 @@ class StorageBucket extends StorageEntry {
    */
   List<ObjectAccessControls> get defaultObjectAcl =>
       new JsonList(
-          this, "posts",
-          (path) => new ObjectAccessControls._delegate(this, "defaultObjectAcl"));
+          this, "defaultObjectAcl",
+          (path) => new ObjectAccessControls._delegate(this, path));
 
   /**
    * The lifecycle configuration of [StorageObject]s in the bucket.
