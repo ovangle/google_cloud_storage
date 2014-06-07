@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+
+<html>
+  <head>
+  	<meta charset="utf-8">
+  	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>client_storage</title>
+  </head>
+
+  <body>
+    <form>
+      <label for="file-input">File:</label>
+      <input id="file-input" type="file"></input>
+    </form>
+    <script type="application/dart" src="client_storage.dart"></script>
+    <!-- for this next line to work, your pubspec.yaml file must have a dependency on 'browser' -->
+    <script src="packages/browser/dart.js"></script>
+  </body>
+</html>
