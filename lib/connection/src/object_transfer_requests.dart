@@ -95,6 +95,8 @@ abstract class ObjectTransferRequests implements ObjectRequests {
    * then default values for the object metadata versions will be provided by
    * server.
    *
+   * [:source:] is a [Source] containing a readable object.
+   *
    * [:ifGenerationMatch:] makes the operation's success dependent on the object if it's [:generation:]
    * matches the provided value.
    * [:ifGenerationNotMatch:] makes the operation's success dependent if it's [:generation:]
@@ -149,14 +151,17 @@ abstract class ObjectTransferRequests implements ObjectRequests {
                 ..['projection'] = projection
                 ..['fields'] = selector;
 
+      var name = _urlEncode(object.name);
+
       var getObjectRpc = new _RemoteProcedureCall(
-          _platformUrl("/b/$bucket/o/${(object as StorageObject).name}", query),
+          _platformUrl("/b/$bucket/o/$name", query),
           "GET");
 
       query['uploadType'] = 'resumable';
 
+
       return _remoteProcedureCall(
-          "/b/$bucket/o",
+          "/b/$bucket/o/$name",
           method: "POST",
           headers: headers,
           query: query,
