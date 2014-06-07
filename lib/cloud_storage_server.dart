@@ -61,15 +61,27 @@ class CloudStorageConnection extends Connection {
           privateKey: privateKey,
           scopes: scopes);
 
-      sendAuthorisedRequest(http.BaseRequest request) =>
-          console.withClient((client) => client.send(request));
 
-      return new CloudStorageConnection._(projectId, sendAuthorisedRequest);
+      return new CloudStorageConnection._(projectId, new _IOClient(console));
     });
   }
 
-  CloudStorageConnection._(String projectId, Future<http.StreamedResponse> sendAuthorisedRequest(http.BaseRequest request)):
-    super(projectId, sendAuthorisedRequest);
+  CloudStorageConnection._(String projectId, http.BaseClient client):
+    super(projectId, client);
+}
+
+class _IOClient extends http.BaseClient {
+
+  http.Client client = new http.Client();
+  final console;
+
+  _IOClient(this.console);
+
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    return console.withClient((client) => client.send(request));
+  }
 }
 
 

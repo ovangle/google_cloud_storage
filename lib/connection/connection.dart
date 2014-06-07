@@ -75,8 +75,8 @@ class Connection extends ConnectionBase with
     BucketRequests,
     ObjectRequests,
     ObjectTransferRequests {
-  Connection(String projectId, Future<http.BaseResponse> sendAuthorisedRequest(http.BaseRequest request)):
-    super(projectId, sendAuthorisedRequest);
+  Connection(String projectId, http.BaseClient client):
+    super(projectId, client);
 }
 
 
@@ -146,7 +146,8 @@ abstract class ConnectionBase {
    */
   Logger logger = new Logger("cloudstorage.connection");
 
-  ConnectionBase(this.projectId, Future<http.BaseResponse> this._sendAuthorisedRequest(http.BaseRequest request));
+  ConnectionBase(this.projectId, http.BaseClient client):
+    _sendAuthorisedRequest = client.send;
 
   /**
    * Submit a remote procedure call to the specified [:path:] with the
@@ -307,6 +308,10 @@ abstract class ConnectionBase {
         if (!contentType.startsWith("application/json")) {
           logger.severe("Expected JSON response from ${response.request}");
           throw new RPCException.expectedJSON(response);
+        }
+
+        if (response is http.StreamedResponse) {
+          return http.Response.fromStream(response).then((r) => JSON.decode(r.body));
         }
 
         return JSON.decode(response.body);
