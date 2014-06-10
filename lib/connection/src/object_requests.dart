@@ -457,7 +457,7 @@ abstract class ObjectRequests implements ConnectionBase {
   }
 
   _ResponseHandler _handleStorageObjectResponse(String selector) {
-    return (_RemoteProcedureCall rpc, http.Response response) =>
+    return (_RemoteProcedureCall rpc, http.BaseResponse response) =>
         _handleJsonResponse(rpc, response)
         .then((result) => new StorageObject.fromJson(result, selector: selector));
   }

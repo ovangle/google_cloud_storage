@@ -137,7 +137,7 @@ abstract class ObjectTransferRequests implements ObjectRequests {
       }
 
       var headers = new Map()
-          ..['X-UploadContent-Type'] = mimeType
+          ..['X-Upload-Content-Type'] = mimeType
           ..['X-Upload-Content-Length'] = source.length.toString()
           ..['X-Upload-Content-MD5'] = CryptoUtils.bytesToBase64(contentMd5)
           ..[HttpHeaders.CONTENT_TYPE] = _JSON_CONTENT;
@@ -161,7 +161,7 @@ abstract class ObjectTransferRequests implements ObjectRequests {
 
 
       return _remoteProcedureCall(
-          "/b/$bucket/o/$name",
+          "/b/$bucket/o",
           method: "POST",
           headers: headers,
           query: query,
