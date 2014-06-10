@@ -18,7 +18,7 @@ void main() {
   group("object upload", () {
     test("should be able to successfully initialise an upload", () {
       Future<http.StreamedResponse> streamHandler(http.BaseRequest request, http.ByteStream bodyStream) {
-        expect(request.headers['X-UploadContent-Type'], 'text/plain');
+        expect(request.headers['X-Upload-Content-Type'], 'text/plain');
         expect(request.headers['X-Upload-Content-Length'], '26');
         expect(request.headers['X-Upload-Content-MD5'], 'w/zT12GS5AB9+0lsymfhOw==');
         expect(request.headers['content-type'], 'application/json; charset=UTF-8');
@@ -39,13 +39,10 @@ void main() {
         });
       }
 
-      MockClient mockClient = new MockClient.streaming(streamHandler);
-
-      Future<http.BaseResponse> sendAuthorisedRequest(http.BaseRequest request) {
-        return mockClient.send(request);
-      }
-
-      var connection = new Connection('proj_id', sendAuthorisedRequest);
+      var connection = new Connection(
+          'proj_id',
+          new MockClient.streaming(streamHandler)
+      );
 
       var obj = new StorageObject("bucket", "object")
           ..metadata['hello'] = 'world';
@@ -70,9 +67,7 @@ void main() {
 
       var connection = new Connection(
           'proj_id',
-          (http.BaseRequest request) {
-            return new MockClient.streaming(streamHandler).send(request);
-          }
+          new MockClient.streaming(streamHandler)
       );
 
       //connection.logger.onRecord.listen(print);
@@ -97,9 +92,7 @@ void main() {
 
       var connection = new Connection(
           'proj_id',
-          (http.BaseRequest request) {
-            return new MockClient.streaming(streamHandler).send(request);
-          }
+          new MockClient.streaming(streamHandler)
       );
 
       var src = new StringSource("abcdefghijklmnopqrstuvwxyz");
@@ -168,9 +161,7 @@ void main() {
 
     var connection = new Connection(
         'proj_id',
-        (http.BaseRequest request) {
-          return new MockClient.streaming(streamHandler).send(request);
-        }
+        new MockClient.streaming(streamHandler)
     );
 
     connection.logger.onRecord.listen(print);
