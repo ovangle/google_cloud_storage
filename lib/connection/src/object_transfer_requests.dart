@@ -264,7 +264,7 @@ abstract class ObjectTransferRequests implements ObjectRequests {
           });
         } else if (response.statusCode == HttpStatus.OK
             || response.statusCode == HttpStatus.CREATED) {
-          return handler(response);
+          return handler(resumeToken._rpc, response);
         } else {
           throw new RPCException.invalidStatus(response);
         }
