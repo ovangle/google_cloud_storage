@@ -1,3 +1,11 @@
+version 0.2.0+2
+===============
+
+bugfixes
+  - storage object handler now (correctly) accepts StreamedResponse
+  - upload resumable now posts to correct url
+  - correct number of args passed to storage object handler
+
 version 0.2.0+1
 ===============
 
