@@ -32,7 +32,7 @@ abstract class ObjectTransferRequests implements ObjectRequests {
  }
 
   Stream<List<int>> _downloadObject(Uri url, Range range) {
-    var rpc = new _RemoteProcedureCall(url, "GET",
+    var rpc = new RPCRequest(url, "GET",
         headers: { HttpHeaders.RANGE: range.toString() }
     );
 
@@ -139,37 +139,50 @@ abstract class ObjectTransferRequests implements ObjectRequests {
       var headers = new Map()
           ..['X-Upload-Content-Type'] = mimeType
           ..['X-Upload-Content-Length'] = source.length.toString()
-          ..['X-Upload-Content-MD5'] = CryptoUtils.bytesToBase64(contentMd5)
-          ..[HttpHeaders.CONTENT_TYPE] = _JSON_CONTENT;
+          ..['X-Upload-Content-MD5'] = CryptoUtils.bytesToBase64(contentMd5);
 
       var query = new _Query(projectId)
-                ..['ifGenerationMatch'] = ifGenerationMatch
-                ..['ifGenerationNotMatch'] = ifGenerationNotMatch
-                ..['ifMetagenerationMatch'] = ifMetagenerationMatch
-                ..['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch
-                ..['predefinedAcl'] = predefinedAcl
-                ..['projection'] = projection
-                ..['fields'] = selector;
+          ..['ifGenerationMatch'] = ifGenerationMatch
+          ..['ifGenerationNotMatch'] = ifGenerationNotMatch
+          ..['ifMetagenerationMatch'] = ifMetagenerationMatch
+          ..['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch
+          ..['predefinedAcl'] = predefinedAcl
+          ..['projection'] = projection
+          ..['fields'] = selector;
 
-      var name = _urlEncode(object.name);
+     // If the request fails between the last byte of data sent and returning the object metadata, we
+     // need to have a way of retrieving the metadata.
+     var getObjectRpc = new RpcRequest("/b/$bucket/o/${object.name}", query: query);
 
-      var getObjectRpc = new _RemoteProcedureCall(
-          _platformUrl("/b/$bucket/o/$name", query),
-          "GET");
-
+      //Set the upload type to 'resumable'
       query['uploadType'] = 'resumable';
 
-
-      return _remoteProcedureCall(
+      var uploadRpc = new RpcRequest(
           "/b/$bucket/o",
           method: "POST",
-          headers: headers,
           query: query,
-          body: object,
-          isUploadUrl: true,
-          handler: _handleUploadInitResponse
-      ).then((uri) {
-        return new ResumeToken(ResumeToken.TOKEN_INIT, uri, new Range(0, -1), getObjectRpc, selector);
+          isUploadRequest: true);
+
+      uploadRpc.headers.addAll(headers);
+      uploadRpc.jsonBody = object.toJson();
+
+
+      return _client.send(uploadRpc).then((response) {
+        if (response.statusCode != HttpStatus.OK)
+          throw new RpcException.invalidStatus(response);
+
+        //The location to submit the upload is the 'location' header.
+        var location = response.headers['location'];
+        if (location == null)
+          throw new RpcException.expectedResponseHeader('location', response);
+
+        return new ResumeToken(
+            ResumeToken.TOKEN_INIT,
+            Uri.parse(location),
+            //FIXME (ovangle): Setting `-1` for the high range makes [Range] unparseable.
+            new Range(0, -1),
+            getObjectRpc
+        );
       });
     });
   }
@@ -188,26 +201,26 @@ abstract class ObjectTransferRequests implements ObjectRequests {
     return new Future.sync(() {
 
       var contentRange = new ContentRange(null, source.length);
-      http.Request request = new http.Request("PUT", resumeToken.uploadUri)
-          ..headers[HttpHeaders.CONTENT_RANGE] = contentRange.toString();
-      return _sendAuthorisedRequest(request)
-          .then(http.Response.fromStream)
-          .then((http.Response response) {
-            if (response.statusCode == HttpStatus.OK ||
-                response.statusCode == HttpStatus.CREATED) {
-              var uploadedRange = new Range(0, source.length - 1);
-              return new ResumeToken._from(resumeToken, ResumeToken.TOKEN_COMPLETE, uploadedRange);
-            }
 
-            if (response.statusCode == HttpStatus.PARTIAL_CONTENT ||
-                response.statusCode == 308 /* Resume Incomplete */) {
-              var range = response.headers[HttpHeaders.RANGE];
-              if (range == null) throw new RPCException.noRangeHeader(response);
-              return new ResumeToken._from(resumeToken, ResumeToken.TOKEN_INTERRUPTED, Range.parse(range));
-            }
+      RpcRequest request = new RpcRequest(resumeToken.uploadUri,method: "PUT")
+          ..headers['content-range'] = contentRange.toString();
 
-            throw new RPCException.invalidStatus(response);
-          });
+      return _client.send(request).then((response) {
+        if (response.statusCode == HttpStatus.OK ||
+            response.statusCode == HttpStatus.CREATED) {
+          var uploadedRange = new Range(0, source.length - 1);
+          return new ResumeToken.fromToken(resumeToken, ResumeToken.TOKEN_COMPLETE, uploadedRange);
+        }
+
+        if (response.statusCode == HttpStatus.PARTIAL_CONTENT ||
+            response.statusCode == 308 /* Resume Incomplete */) {
+          var range = response.headers['range'];
+          if (range == null) throw new RpcException.expectedResponseHeader('range', response);
+          return new ResumeToken.fromToken(resumeToken, ResumeToken.TOKEN_INTERRUPTED, Range.parse(range));
+        }
+
+        throw new RpcException.invalidStatus(response);
+      });
     });
   }
 
@@ -215,26 +228,28 @@ abstract class ObjectTransferRequests implements ObjectRequests {
     return new Future.sync(() {
       if (resumeToken.isComplete)
         throw new StateError('Upload already complete');
+      print('Resuming upload');
 
       var uploadId = resumeToken.uploadUri.queryParameters['upload_id'];
       logger.info("Resuming upload $uploadId");
       logger.info("At byte: ${resumeToken.range.hi + 1}");
       logger.info("Bytes remaining: ${source.length - resumeToken.range.hi}");
 
-      http.StreamedRequest request = new http.StreamedRequest("PUT", resumeToken.uploadUri);
-
       var uploadRange = new ContentRange(
-          new Range(resumeToken.range.hi, source.length - 1),
+          new Range(resumeToken.range.hi + 1, source.length - 1),
           source.length
       );
 
-      request.headers[HttpHeaders.CONTENT_RANGE] = uploadRange.toString();
+      var request = new StreamedRpcRequest(resumeToken.uploadUri, method: "PUT")
+          ..headers['content-range'] = uploadRange.toString();
+
 
       //Add the next chunk to the stream.
       //Seperate the source into chunks of size [_BUFFER_SIZE] to avoid
       //loading the whole source into memory at once.
       addChunkAt(int pos) {
         if (pos >= source.length) return request.sink.close();
+
         source.setPosition(pos);
         return source.read(_BUFFER_SIZE)
             .then((bytes) {
@@ -245,47 +260,32 @@ abstract class ObjectTransferRequests implements ObjectRequests {
 
       addChunkAt(uploadRange.range.lo);
 
-      _sendAuthorisedRequest(request).then((response) {
+      return _client.send(request, retryRequest: false).then((response) {
 
 
-        //Set up the handler for the object metadata.
-        var handler = _handleStorageObjectResponse(resumeToken._selector);
+        var selector = resumeToken.getObjectRequest.query['fields'];
+        handler(RpcResponse response) =>
+            new StorageObject.fromJson(response.jsonBody, selector: selector);
 
         if (_RETRY_STATUS.contains(response.statusCode)) {
-
           return getUploadStatus(resumeToken, source).then((resumeToken) {
             if (resumeToken.isComplete) {
               //Send the (stored) request to get the object metadata.
-              return _sendAuthorisedRequest(resumeToken._rpc.asRequest()).then(handler);
+              return _client.send(resumeToken.getObjectRequest)
+                  .then(handler);
             } else {
               //Othwerise we still have bytes to upload. Resume the upload.
               return resumeUpload(resumeToken, source);
             }
           });
+
         } else if (response.statusCode == HttpStatus.OK
             || response.statusCode == HttpStatus.CREATED) {
-          return handler(resumeToken._rpc, response);
+          return handler(response);
         } else {
-          throw new RPCException.invalidStatus(response);
+          throw new RpcException.invalidStatus(response);
         }
       });
-    });
-  }
-
-  /**
-   * Handles the response obtained when sending object metadata to begin a upload request.
-   */
-  Future<Uri> _handleUploadInitResponse(_RemoteProcedureCall rpc, http.BaseResponse response) {
-    return _handleResponse(rpc, response).then((response) {
-
-      if (response.statusCode != HttpStatus.OK)
-        throw new RPCException.invalidStatus(response);
-
-      var location = response.headers[HttpHeaders.LOCATION];
-      if (location == null)
-        throw new RPCException.noLocationHeader(response);
-
-      return new Future.value(Uri.parse(location));
     });
   }
 
@@ -303,76 +303,4 @@ Uint8List _parseMd5Header(Map<String,String> responseHeaders) {
     }
   }
   return null;
-}
-
-/**
- * A token which can be used to resume an upload from the point in the source where it failed.
- */
-class ResumeToken {
-  /**
-   * The token obtained from the `uploadObject` method
-   */
-  static const TOKEN_INIT = 0;
-  /**
-   * The token obtained when a upload request was interrupted
-   */
-  static const TOKEN_INTERRUPTED = 1;
-  /**
-   * A token obtained when the upload is complete.
-   */
-  static const TOKEN_COMPLETE = 2;
-
-  /**
-   * The type of the token. One of [TOKEN_INIT], [TOKEN_INTERRUPTED] or [TOKEN_COMPLETE]
-   */
-  final int type;
-
-  bool get isInit => type == TOKEN_INIT;
-  bool get isComplete => type == TOKEN_COMPLETE;
-
-  /**
-   * The endpoint of the upload service
-   */
-  final Uri uploadUri;
-
-  /**
-   * The range of bytes that have been sucessfully uploaded.
-   * *Note*: The specified range is a closed range, inclusive of the first and last byte positions
-   * in accordance with `W3C` specifications.
-   */
-  final Range range;
-
-  /**
-   * A rpc which can be used to get the status of the object rather than failing
-   */
-  final _RemoteProcedureCall _rpc;
-
-  /**
-   * The selector of the completed upload metadata
-   */
-  final String _selector;
-
-  ResumeToken(this.type, this.uploadUri, this.range, this._rpc, this._selector);
-
-  ResumeToken._from(ResumeToken token, this.type, this.range):
-    this.uploadUri = token.uploadUri,
-    this._rpc = token._rpc,
-    this._selector = token._selector;
-
-  ResumeToken.fromJson(Map<String,dynamic> json):
-    this(
-        json['type'],
-        Uri.parse(json['url']),
-        Range.parse(json['range']),
-        new _RemoteProcedureCall.fromJson(json['rpc']),
-        json['selector']
-    );
-
-  toJson() =>
-      { 'type': type,
-         'url': uploadUri.toString(),
-         'range': range.toString(),
-         'rpc': _rpc.toJson(),
-         'selector': _selector
-      };
 }
