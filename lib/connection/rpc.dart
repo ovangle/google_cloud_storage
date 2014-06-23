@@ -33,7 +33,7 @@ abstract class RpcClient {
   /**
    * A set of statuses which will trigger a request retry.
    */
-  final Set<int> retryStatus = new Set<int>();
+  final Set<int> retryStatus = new Set<int>.from([500, 502, 503, 504]);
 
 
   RpcClient(
@@ -74,9 +74,6 @@ abstract class RpcClient {
 
       response = new RpcResponse(response);
 
-      if (response.statusCode < 200 || response.statusCode >= 300)
-        throw new RpcException.invalidStatus(response);
-
       return response;
     });
   }
@@ -115,9 +112,11 @@ abstract class BaseRpcRequest {
       dynamic /* String | Uri */ endpoint,
       { String this.method: "GET",
         Map<String,String> this.query: const {},
-        bool this.isUploadRequest: false }):
-    this.endpoint = new Either.branch(endpoint, (v) => v is Uri),
-    this.headers = {'content-type': 'application/json; charset=utf-8'};
+        bool this.isUploadRequest: false,
+        Map<String, String> headers
+      }):
+    this.endpoint = new Either.branch(endpoint, (v) => v is Uri), this.headers = (headers != null ? headers : {}) {
+  }
 
   /**
    * Get the request url from the method.
@@ -169,9 +168,10 @@ class RpcRequest extends BaseRpcRequest {
       dynamic /* String | Uri */ endpoint,
       { String method: "GET",
         Map<String,String> query: const {},
-        bool isUploadRequest: false
+        bool isUploadRequest: false,
+        Map<String, String> headers
       }):
-    super(endpoint, method: method, query: query, isUploadRequest: isUploadRequest);
+    super(endpoint, method: method, query: query, isUploadRequest: isUploadRequest, headers: headers);
 
   factory RpcRequest.fromJson(Map<String,dynamic> json) {
 

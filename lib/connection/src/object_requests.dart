@@ -45,7 +45,7 @@ abstract class ObjectRequests implements ConnectionBase {
         String selector: '*'
       }) {
     return new Future.sync(() {
-      var query = new _Query(projectId)
+      var query = new _Query()
           ..['generation'] = generation
           ..['ifGenerationMatch'] = ifGenerationMatch
           ..['ifGenerationNotMatch'] = ifMetagenerationMatch
@@ -90,7 +90,7 @@ abstract class ObjectRequests implements ConnectionBase {
         int ifMetagenerationNotMatch
       }) {
     return new Future.sync(() {
-      var query = new _Query(projectId)
+      var query = new _Query()
           ..['generation'] = generation
           ..['ifGenerationMatch'] = ifGenerationMatch
           ..['ifGenerationNotMatch'] = ifGenerationNotMatch
@@ -155,7 +155,7 @@ abstract class ObjectRequests implements ConnectionBase {
       var headers = new Map()
         ..[HttpHeaders.CONTENT_TYPE] = _JSON_CONTENT;
 
-      var query = new _Query(projectId)
+      var query = new _Query()
           ..['generation'] = generation
           ..['ifGenerationMatch'] = ifGenerationMatch
           ..['ifGenerationNotMatch'] = ifGenerationNotMatch
@@ -242,7 +242,7 @@ abstract class ObjectRequests implements ConnectionBase {
       Map<String,String> headers = new Map<String,String>()
           ..[HttpHeaders.CONTENT_TYPE] = _JSON_CONTENT;
 
-      var query = new _Query(projectId)
+      var query = new _Query()
           ..['sourceGeneration'] = sourceGeneration
           ..['ifSourceGenerationMatch'] = ifSourceGenerationMatch
           ..['ifSourceGenerationNotMatch'] = ifSourceGenerationNotMatch
@@ -319,7 +319,7 @@ abstract class ObjectRequests implements ConnectionBase {
       var headers = new Map()
           ..[HttpHeaders.CONTENT_TYPE] = _JSON_CONTENT;
 
-      var query = new _Query(projectId)
+      var query = new _Query()
           ..['destinationPredefinedAcl'] = PredefinedAcl.PRIVATE
           ..['ifGenerationMatch'] = ifGenerationMatch
           ..['ifMetagenerationMatch'] = ifMetagenerationMatch
@@ -413,7 +413,7 @@ abstract class ObjectRequests implements ConnectionBase {
     if (selector != "*") {
       fields = fields + "($selector)";
     }
-    var query = new _Query(projectId)
+    var query = new _Query()
         ..['maxResults'] = (maxResults >= 0) ? maxResults : null
         ..['projection'] = projection
         ..['delimiter'] = delimiter

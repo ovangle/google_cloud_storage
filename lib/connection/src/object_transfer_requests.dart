@@ -7,81 +7,35 @@ const int _BUFFER_SIZE = 5 * 1024 * 1024;
 
 abstract class ObjectTransferRequests implements ObjectRequests {
 
-  Stream<List<int>> downloadObject(
-      String bucket,
-      String object,
-      { int generation,
-        int ifGenerationMatch,
-        int ifGenerationNotMatch,
-        int ifMetagenerationMatch,
-        int ifMetagenerationNotMatch,
-        Range byteRange
-      }) {
-    var query = new _Query(projectId)
-        ..['generation'] = generation
-        ..['ifGenerationMatch'] = ifGenerationMatch
-        ..['ifGenerationNotMatch'] = ifMetagenerationMatch
-        ..['ifMetagenerationMatch'] = ifMetagenerationMatch
-        ..['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch
-        ..['alt'] = 'media';
+  Stream<List<int>> downloadObject(String bucket, String object, { int ifGenerationMatch, int ifGenerationNotMatch,
+      int ifMetagenerationMatch, int ifMetagenerationNotMatch, String projection, String selector }) {
+
     object = _urlEncode(object);
-
-    var url = _platformUrl("/b/$bucket/o/$object", query);
-
-    return _downloadObject(url, byteRange);
- }
-
-  Stream<List<int>> _downloadObject(Uri url, Range range) {
-    var rpc = new RPCRequest(url, "GET",
-        headers: { HttpHeaders.RANGE: range.toString() }
-    );
-
     StreamController controller = new StreamController<List<int>>();
 
-    _sendAuthorisedRequest(rpc.asRequest())
-        .then((http.StreamedResponse response) {
-      var expectedMd5Hash = _parseMd5Header(response.headers);
+    //Set the upload type to 'resumable'
+    var query = new _Query();
 
-      var contentLength = response.contentLength;
+    notNull(ifGenerationMatch, () => query['ifGenerationMatch'] = ifGenerationMatch);
+    notNull(ifGenerationNotMatch, () => query['ifGenerationNotMatch'] = ifGenerationNotMatch);
+    notNull(ifMetagenerationMatch, () => query['ifMetagenerationMatch'] = ifMetagenerationMatch);
+    notNull(ifMetagenerationNotMatch, () => query['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch);
+    notNull(projection, () => query['projection'] = projection);
+    notNull(selector, () => query['field'] = selector);
 
-      int counter = 0;
-      var md5Hash = new MD5();
+    var uploadRpc = new RpcRequest("/b/$bucket/o/$object", headers: { HttpHeaders.RANGE: range.toString() },
+        query: query);
 
-      void addBytes(List<int> bytes) {
-        md5Hash.add(bytes);
-        controller.add(bytes);
-        counter += bytes.length;
-      }
-
-      var subscription;
-      subscription = response.stream.listen(
-        addBytes,
-        onError: (err, stackTrace) {
-          logger.warning("Encountered error when reading response stream\n"
-                                 "Resuming", err, stackTrace);
-         Range range = new Range(counter + 1, contentLength - 1);
-         _downloadObject(url, range).listen(
-             addBytes,
-             onError: controller.addError,
-             onDone: controller.close);
-         subscription.cancel();
-        },
-        onDone: () {
-          controller.close();
-          // Compare the value of the hash we built while downloading the object
-          // to the one provided in the header
-          if (expectedMd5Hash != null) {
-            var actualHash = new Uint8List.fromList(md5Hash.close());
-            if (!_LIST_EQ.equals(expectedMd5Hash, actualHash)) {
-              throw new ObjectTransferException("Md5 hash mismatch. Retry download");
-            }
-          }
-        });
-    })
-    .catchError(controller.addError);
+    _client.send(uploadRpc).then((RpcResponse resp) {
+      String link = JSON.decode(resp.body)['mediaLink'];
+      _client.send(new RpcRequest(Uri.parse(link))).then((RpcResponse resp) {
+        controller.add(resp.body);
+        controller.close();
+      });
+    });
 
     return controller.stream;
-  }
+ }
 
   /**
    * Store a new [:object:] with the given [:mimeType:] to the specified [:bucket:],
@@ -125,9 +79,9 @@ abstract class ObjectTransferRequests implements ObjectRequests {
         int ifGenerationNotMatch,
         int ifMetagenerationMatch,
         int ifMetagenerationNotMatch,
-        PredefinedAcl predefinedAcl: PredefinedAcl.PROJECT_PRIVATE,
-        String projection: 'noAcl',
-        String selector: '*'
+        PredefinedAcl predefinedAcl,
+        String projection,
+        String selector
       }) {
     return source.md5().then((contentMd5) {
       if (object is String) {
@@ -139,23 +93,18 @@ abstract class ObjectTransferRequests implements ObjectRequests {
       var headers = new Map()
           ..['X-Upload-Content-Type'] = mimeType
           ..['X-Upload-Content-Length'] = source.length.toString()
-          ..['X-Upload-Content-MD5'] = CryptoUtils.bytesToBase64(contentMd5);
-
-      var query = new _Query(projectId)
-          ..['ifGenerationMatch'] = ifGenerationMatch
-          ..['ifGenerationNotMatch'] = ifGenerationNotMatch
-          ..['ifMetagenerationMatch'] = ifMetagenerationMatch
-          ..['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch
-          ..['predefinedAcl'] = predefinedAcl
-          ..['projection'] = projection
-          ..['fields'] = selector;
-
-     // If the request fails between the last byte of data sent and returning the object metadata, we
-     // need to have a way of retrieving the metadata.
-     var getObjectRpc = new RpcRequest("/b/$bucket/o/${object.name}", query: query);
+          ..['Content-Type'] = 'application/json; charset=utf-8';
 
       //Set the upload type to 'resumable'
-      query['uploadType'] = 'resumable';
+      var query = new _Query()
+        ..['uploadType'] = 'resumable';
+
+      notNull(ifGenerationMatch, () => query['ifGenerationMatch'] = ifGenerationMatch);
+      notNull(ifGenerationNotMatch, () => query['ifGenerationNotMatch'] = ifGenerationNotMatch);
+      notNull(ifMetagenerationMatch, () => query['ifMetagenerationMatch'] = ifMetagenerationMatch);
+      notNull(ifMetagenerationNotMatch, () => query['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch);
+      notNull(projection, () => query['projection'] = projection);
+      notNull(selector, () => query['field'] = selector);
 
       var uploadRpc = new RpcRequest(
           "/b/$bucket/o",
@@ -168,6 +117,7 @@ abstract class ObjectTransferRequests implements ObjectRequests {
 
 
       return _client.send(uploadRpc).then((response) {
+
         if (response.statusCode != HttpStatus.OK)
           throw new RpcException.invalidStatus(response);
 
@@ -176,12 +126,19 @@ abstract class ObjectTransferRequests implements ObjectRequests {
         if (location == null)
           throw new RpcException.expectedResponseHeader('location', response);
 
+        StreamedRpcRequest rpcRequest = new StreamedRpcRequest(Uri.parse(location), method: 'PUT');
+        rpcRequest.headers.putIfAbsent('Content-Type', () => mimeType);
+        source.read(source.length).then((List<int> data) {
+          rpcRequest.sink.add(data);
+          rpcRequest.sink.close();
+          _client.send(rpcRequest).then((RpcResponse resp) {
+            print('Resp body: ${resp.body}');
+          });
+        });
+
         return new ResumeToken(
             ResumeToken.TOKEN_INIT,
-            Uri.parse(location),
-            //FIXME (ovangle): Setting `-1` for the high range makes [Range] unparseable.
-            new Range(0, -1),
-            getObjectRpc
+            Uri.parse(location)
         );
       });
     });
@@ -208,15 +165,18 @@ abstract class ObjectTransferRequests implements ObjectRequests {
       return _client.send(request).then((response) {
         if (response.statusCode == HttpStatus.OK ||
             response.statusCode == HttpStatus.CREATED) {
-          var uploadedRange = new Range(0, source.length - 1);
-          return new ResumeToken.fromToken(resumeToken, ResumeToken.TOKEN_COMPLETE, uploadedRange);
+          return new ResumeToken.fromToken(resumeToken, ResumeToken.TOKEN_COMPLETE, rpcResponse: response);
         }
 
         if (response.statusCode == HttpStatus.PARTIAL_CONTENT ||
             response.statusCode == 308 /* Resume Incomplete */) {
-          var range = response.headers['range'];
-          if (range == null) throw new RpcException.expectedResponseHeader('range', response);
-          return new ResumeToken.fromToken(resumeToken, ResumeToken.TOKEN_INTERRUPTED, Range.parse(range));
+          if (response.headers.containsKey('range')) {
+            var range = response.headers['range'];
+            return new ResumeToken.fromToken(resumeToken, ResumeToken.TOKEN_INTERRUPTED, range: Range.parse(range));
+          } else {
+            return new ResumeToken.fromToken(resumeToken, ResumeToken.TOKEN_INTERRUPTED);
+          }
+
         }
 
         throw new RpcException.invalidStatus(response);
@@ -228,17 +188,11 @@ abstract class ObjectTransferRequests implements ObjectRequests {
     return new Future.sync(() {
       if (resumeToken.isComplete)
         throw new StateError('Upload already complete');
-      print('Resuming upload');
 
-      var uploadId = resumeToken.uploadUri.queryParameters['upload_id'];
-      logger.info("Resuming upload $uploadId");
-      logger.info("At byte: ${resumeToken.range.hi + 1}");
-      logger.info("Bytes remaining: ${source.length - resumeToken.range.hi}");
+      var alreadyUploadedRange = (resumeToken.range != null  ? new Range(resumeToken.range.hi + 1, source.length - 1) :
+          new Range(0, source.length -1));
 
-      var uploadRange = new ContentRange(
-          new Range(resumeToken.range.hi + 1, source.length - 1),
-          source.length
-      );
+      var uploadRange = new ContentRange(alreadyUploadedRange, source.length);
 
       var request = new StreamedRpcRequest(resumeToken.uploadUri, method: "PUT")
           ..headers['content-range'] = uploadRange.toString();
@@ -260,21 +214,17 @@ abstract class ObjectTransferRequests implements ObjectRequests {
 
       addChunkAt(uploadRange.range.lo);
 
-      return _client.send(request, retryRequest: false).then((response) {
-
-
-        var selector = resumeToken.getObjectRequest.query['fields'];
+      return _client.send(request, retryRequest: false).then((RpcResponse response) {
         handler(RpcResponse response) =>
-            new StorageObject.fromJson(response.jsonBody, selector: selector);
+            new StorageObject.fromJson(response.jsonBody);
 
         if (_RETRY_STATUS.contains(response.statusCode)) {
           return getUploadStatus(resumeToken, source).then((resumeToken) {
             if (resumeToken.isComplete) {
-              //Send the (stored) request to get the object metadata.
-              return _client.send(resumeToken.getObjectRequest)
-                  .then(handler);
+              //Use stored response to get the object metadata.
+              return handler(resumeToken.rpcResponse);
             } else {
-              //Othwerise we still have bytes to upload. Resume the upload.
+              //Otherwise we still have bytes to upload. Resume the upload.
               return resumeUpload(resumeToken, source);
             }
           });

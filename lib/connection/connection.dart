@@ -14,6 +14,8 @@ import 'package:logging/logging.dart';
 import 'package:quiver/async.dart' show forEachAsync;
 import 'package:quiver/iterables.dart' show range;
 
+import '../matcher/matcher.dart';
+
 import '../api/api.dart';
 import '../source/source_common.dart';
 import '../utils/content_range.dart';
@@ -232,7 +234,7 @@ class ObjectTransferException implements Exception {
  * a url to a remote procedure call path.
  */
 class _Query extends DelegatingMap<String,String> {
-  _Query(String projectId): super({'project': projectId});
+  _Query(): super({});
 
   _Query.from(_Query query) : super(new Map.from(query));
 
