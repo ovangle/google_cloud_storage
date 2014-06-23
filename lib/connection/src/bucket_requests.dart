@@ -29,7 +29,7 @@ abstract class BucketRequests implements ConnectionBase {
         String selector: "*"
       }) {
     return new Future.sync(() {
-      var query = new _Query(projectId)
+      var query = new _Query()
           ..['ifMetagenerationMatch'] = ifMetagenerationMatch
           ..['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch
           ..['projection'] = projection
@@ -66,7 +66,7 @@ abstract class BucketRequests implements ConnectionBase {
     if (selector != "*") {
       fields += "($selector)";
     }
-    var query = new _Query(projectId)
+    var query = new _Query()
         ..['maxResults'] = (maxResults >= 0) ? maxResults : null
         ..['projection'] = projection
         ..['fields'] = fields;
@@ -115,7 +115,7 @@ abstract class BucketRequests implements ConnectionBase {
 
       _checkValidBucketName(bucket.name);
 
-      var query = new _Query(projectId)
+      var query = new _Query()
           ..['projection'] = projection
           ..['fields'] = selector;
 
@@ -149,7 +149,7 @@ abstract class BucketRequests implements ConnectionBase {
         int ifMetagenerationNotMatch
       }) {
     return new Future.sync(() {
-      var query = new _Query(projectId)
+      var query = new _Query()
           ..['ifMetagenerationMatch'] = ifMetagenerationMatch
           ..['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch;
 
@@ -208,7 +208,7 @@ abstract class BucketRequests implements ConnectionBase {
         String resultSelector
       }) {
     return new Future.sync(() {
-      var query = new _Query(projectId)
+      var query = new _Query()
           ..['ifMetagenerationMatch'] = ifMetagenerationMatch
           ..['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch
           ..['projection'] = projection
