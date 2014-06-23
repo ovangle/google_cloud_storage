@@ -5,8 +5,6 @@ import 'dart:html';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart';
-import 'package:quiver/iterables.dart' show range;
 import 'package:quiver/async.dart' show forEachAsync, AsyncAction;
 
 import 'source_common.dart';
@@ -32,19 +30,6 @@ class BlobSource implements Source {
 
   @override
   int get length => blob.size;
-
-  @override
-  Future<List<int>> md5() {
-    var hash = new MD5();
-    //Create a copy of the source so that we don't alter
-    //the current source's position
-    var source = new BlobSource(this.blob)
-        ..reader = reader;
-    return _forEachAsync(
-        range(0, length, _BUFFER_SIZE),
-        (pos) => source.read(_BUFFER_SIZE).then(hash.add)
-    ).then((_) => hash.close());
-  }
 
   @override
   int get position => _pos;

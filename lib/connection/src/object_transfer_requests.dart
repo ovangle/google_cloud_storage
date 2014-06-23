@@ -83,7 +83,7 @@ abstract class ObjectTransferRequests implements ObjectRequests {
         String projection,
         String selector
       }) {
-    return source.md5().then((contentMd5) {
+    return new Future.sync(() {
       if (object is String) {
         object = new StorageObject(bucket, object);
       } else if (object is! StorageObject) {
