@@ -4,9 +4,13 @@ import 'dart:async';
 import 'dart:convert' show UTF8, JSON;
 
 import 'package:unittest/unittest.dart';
+import 'package:mock/mock.dart';
 
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+
+import 'package:google_cloud_storage/connection/rpc.dart';
+import 'package:google_cloud_storage/connection/resume_token.dart';
 
 import '../../lib/api/api.dart';
 import '../../lib/connection/connection.dart';
@@ -20,8 +24,7 @@ void main() {
       Future<http.StreamedResponse> streamHandler(http.BaseRequest request, http.ByteStream bodyStream) {
         expect(request.headers['X-Upload-Content-Type'], 'text/plain');
         expect(request.headers['X-Upload-Content-Length'], '26');
-        expect(request.headers['X-Upload-Content-MD5'], 'w/zT12GS5AB9+0lsymfhOw==');
-        expect(request.headers['content-type'], 'application/json; charset=UTF-8');
+        expect(request.headers['content-type'], 'application/json; charset=utf-8');
 
         expect(request.url.queryParameters['uploadType'], 'resumable');
 
@@ -41,7 +44,7 @@ void main() {
 
       var connection = new Connection(
           'proj_id',
-          new MockClient.streaming(streamHandler)
+          new MockRpcClient(streamHandler)
       );
 
       var obj = new StorageObject("bucket", "object")
@@ -49,7 +52,7 @@ void main() {
       var src = new StringSource("abcdefghijklmnopqrstuvwxyz");
       return connection.uploadObject("bucket", obj, 'text/plain', src).then((resumeToken) {
         expect(resumeToken.uploadUri, Uri.parse("http://example.com"));
-        expect(resumeToken.range, new Range(0,-1));
+        expect(resumeToken.range, null);
       });
     });
 
@@ -59,7 +62,7 @@ void main() {
       Future<http.StreamedResponse> streamHandler(http.BaseRequest request, http.ByteStream bodyStream) {
         var response = new http.StreamedResponse(
             new Stream.fromIterable([]),
-            (retryCount++ < 2) ? 408: 200,
+            (retryCount++ < 2) ? 504: 200,
             headers: {'location': 'http://example.com' }
         );
         return new Future.value(response);
@@ -67,7 +70,7 @@ void main() {
 
       var connection = new Connection(
           'proj_id',
-          new MockClient.streaming(streamHandler)
+          new MockRpcClient(streamHandler)
       );
 
       //connection.logger.onRecord.listen(print);
@@ -75,7 +78,7 @@ void main() {
       var src = new StringSource("abcdefghijklmnopqrstuvwxyz");
       return connection.uploadObject("bucket", "object", "text/plain", src).then((resumeToken) {
         expect(resumeToken.uploadUri, Uri.parse("http://example.com"));
-        expect(resumeToken.range, new Range(0,-1));
+        expect(resumeToken.range, null);
       });
     });
 
@@ -92,7 +95,7 @@ void main() {
 
       var connection = new Connection(
           'proj_id',
-          new MockClient.streaming(streamHandler)
+          new MockRpcClient(streamHandler)
       );
 
       var src = new StringSource("abcdefghijklmnopqrstuvwxyz");
@@ -100,9 +103,7 @@ void main() {
           new ResumeToken(
               ResumeToken.TOKEN_INTERRUPTED,
               Uri.parse('http://example.com'),
-              new Range(0,13),
-              null,
-              '*'
+              range: new Range(0,13)
           ),
           src
       ).then((resumeToken) {
@@ -161,7 +162,7 @@ void main() {
 
     var connection = new Connection(
         'proj_id',
-        new MockClient.streaming(streamHandler)
+        new MockRpcClient(streamHandler)
     );
 
     connection.logger.onRecord.listen(print);
@@ -170,15 +171,30 @@ void main() {
     return connection.resumeUpload(
         new ResumeToken(
             ResumeToken.TOKEN_INIT,
-            Uri.parse('http://www.example.com'),
-            new Range(0,0),
-            null,
-            '*'),
+            Uri.parse('http://www.example.com')),
         src)
         .then((obj) {
           print(obj);
         });
 
   });
+
+}
+
+class MockRpcClient extends RpcClient implements Mock {
+
+  final http.BaseClient baseClient;
+
+  MockRpcClient._(baseClient, streamHandler): this.baseClient = baseClient, super(baseClient) {
+  }
+
+  factory MockRpcClient(streamHandler) {
+    return new MockRpcClient._(new MockClient.streaming(streamHandler), streamHandler);
+  }
+
+  Future<RpcRequest> authorize(RpcRequest request) {
+    request.headers['Authorization'] = 'Bearer someToken';
+    return new Future.value(request);
+  }
 
 }

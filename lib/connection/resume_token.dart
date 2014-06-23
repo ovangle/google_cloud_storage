@@ -25,6 +25,10 @@ class ResumeToken {
    */
   final int type;
 
+  final Range range;
+
+  final rpcResponse;
+
   bool get isInit => type == TOKEN_INIT;
   bool get isComplete => type == TOKEN_COMPLETE;
 
@@ -33,53 +37,8 @@ class ResumeToken {
    */
   final Uri uploadUri;
 
-  /**
-   * The range of bytes that have been sucessfully uploaded.
-   * *Note*: The specified range is a closed range, inclusive of the first and last byte positions
-   * in accordance with `W3C` specifications.
-   */
-  final Range range;
+  ResumeToken(this.type, this.uploadUri, {this.range}) : rpcResponse = null;
 
-  /**
-   * A rpc which can be used to get the metadata of the object rather than failing
-   */
-  final RpcRequest getObjectRequest;
-
-  /**
-   * The selector of the completed upload metadata
-   */
-  String get resultSelector => getObjectRequest.query['fields'];
-
-  ResumeToken(this.type, this.uploadUri, this.range, this.getObjectRequest);
-
-  ResumeToken.fromToken(ResumeToken token, this.type, this.range):
-    this.uploadUri = token.uploadUri,
-    this.getObjectRequest = token.getObjectRequest;
-
-  factory ResumeToken.fromJson(Map<String,dynamic> json) {
-
-    var type = json['type'];
-
-    var range;
-    //FIXME: Shouldn't raise a FormatException in the first place
-    print('type: ${json['type']}');
-    if (type == TOKEN_INIT) {
-      range = new Range(0, -1);
-    } else {
-      range = Range.parse(json['range']);
-    }
-    return new ResumeToken(
-        type,
-        Uri.parse(json['url']),
-        range,
-        new RpcRequest.fromJson(json['rpc'])
-    );
-  }
-
-  toJson() =>
-      { 'type': type,
-         'url': uploadUri.toString(),
-         'range': range.toString(),
-         'rpc': getObjectRequest.toJson()
-      };
+  ResumeToken.fromToken(ResumeToken token, this.type, {this.range, this.rpcResponse}):
+    this.uploadUri = token.uploadUri;
 }
