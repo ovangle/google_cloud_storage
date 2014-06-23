@@ -104,7 +104,7 @@ abstract class ObjectTransferRequests implements ObjectRequests {
       notNull(ifMetagenerationMatch, () => query['ifMetagenerationMatch'] = ifMetagenerationMatch);
       notNull(ifMetagenerationNotMatch, () => query['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch);
       notNull(projection, () => query['projection'] = projection);
-      notNull(selector, () => query['field'] = selector);
+      notNull(selector, () => query['fields'] = selector);
 
       var uploadRpc = new RpcRequest(
           "/b/$bucket/o",
@@ -138,7 +138,8 @@ abstract class ObjectTransferRequests implements ObjectRequests {
 
         return new ResumeToken(
             ResumeToken.TOKEN_INIT,
-            Uri.parse(location)
+            Uri.parse(location),
+            selector
         );
       });
     });
@@ -189,34 +190,19 @@ abstract class ObjectTransferRequests implements ObjectRequests {
       if (resumeToken.isComplete)
         throw new StateError('Upload already complete');
 
-      var alreadyUploadedRange = (resumeToken.range != null  ? new Range(resumeToken.range.hi + 1, source.length - 1) :
+      var rangeToUpload = (resumeToken.range != null  ? new Range(resumeToken.range.hi + 1, source.length - 1) :
           new Range(0, source.length -1));
 
-      var uploadRange = new ContentRange(alreadyUploadedRange, source.length);
+      var contentRange = new ContentRange(rangeToUpload, source.length);
 
       var request = new StreamedRpcRequest(resumeToken.uploadUri, method: "PUT")
-          ..headers['content-range'] = uploadRange.toString();
+          ..headers['content-range'] = contentRange.toString();
 
-
-      //Add the next chunk to the stream.
-      //Seperate the source into chunks of size [_BUFFER_SIZE] to avoid
-      //loading the whole source into memory at once.
-      addChunkAt(int pos) {
-        if (pos >= source.length) return request.sink.close();
-
-        source.setPosition(pos);
-        return source.read(_BUFFER_SIZE)
-            .then((bytes) {
-                request.sink.add(bytes);
-                return addChunkAt(0 + _BUFFER_SIZE);
-            });
-      }
-
-      addChunkAt(uploadRange.range.lo);
+      request.addSource(source, rangeToUpload.hi + 1);
 
       return _client.send(request, retryRequest: false).then((RpcResponse response) {
         handler(RpcResponse response) =>
-            new StorageObject.fromJson(response.jsonBody);
+            new StorageObject.fromJson(response.jsonBody, selector: resumeToken.selector);
 
         if (_RETRY_STATUS.contains(response.statusCode)) {
           return getUploadStatus(resumeToken, source).then((resumeToken) {
@@ -239,18 +225,4 @@ abstract class ObjectTransferRequests implements ObjectRequests {
     });
   }
 
-}
-
-Uint8List _parseMd5Header(Map<String,String> responseHeaders) {
-  var googHash = responseHeaders['x-goog-hash'];
-  if (googHash == null) return null;
-  googHash = googHash.split(',');
-  for (var hash in googHash) {
-    if (hash.startsWith('md5=')) {
-      return new Uint8List.fromList(
-          CryptoUtils.base64StringToBytes(hash.substring('md5='.length))
-      );
-    }
-  }
-  return null;
 }
