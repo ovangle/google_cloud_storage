@@ -198,7 +198,8 @@ abstract class ObjectTransferRequests implements ObjectRequests {
       var request = new StreamedRpcRequest(resumeToken.uploadUri, method: "PUT")
           ..headers['content-range'] = contentRange.toString();
 
-      request.addSource(source, rangeToUpload.hi + 1);
+      //Add the source to the request
+      request.addSource(source, rangeToUpload.lo);
 
       return _client.send(request, retryRequest: false).then((RpcResponse response) {
         handler(RpcResponse response) =>
