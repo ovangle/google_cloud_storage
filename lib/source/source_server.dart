@@ -7,8 +7,6 @@ library source_server;
 import 'dart:async';
 import 'dart:io';
 
-import 'package:crypto/crypto.dart';
-
 import 'source_common.dart';
 
 export 'source_common.dart';
@@ -28,21 +26,6 @@ class FileSource implements Source {
       _length = file.lengthSync();
     }
     return _length;
-  }
-
-  @override
-  Future<List<int>> md5() {
-    var md5 = new MD5();
-    var completer = new Completer();
-
-    file.openRead().listen(
-        md5.add,
-        onError: completer.completeError,
-        cancelOnError: true,
-        onDone: () => completer.complete(md5.close())
-    );
-
-    return completer.future;
   }
 
   @override

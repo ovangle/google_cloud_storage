@@ -8,6 +8,7 @@ import 'dart:mirrors' as mirrors;
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
 
+import '../source/source_common.dart';
 import '../utils/either.dart';
 
 final _random = new math.Random();
@@ -235,6 +236,12 @@ class RpcRequest extends BaseRpcRequest {
 
 class StreamedRpcRequest extends BaseRpcRequest {
 
+  /**
+   * When adding a [Source] to the request, load bytes
+   * from the [Source] in chunks of [_BUFFER_SIZE].
+   */
+  static const int _BUFFER_SIZE = 5 * 1024 * 1024;
+
   StreamController _controller = new StreamController();
 
 
@@ -259,6 +266,20 @@ class StreamedRpcRequest extends BaseRpcRequest {
    * A [StreamSink] to insert request headers
    */
   EventSink<List<int>> get sink => _controller.sink;
+
+  /**
+   * Add bytes from [Source] to the request, beginning at [:start:].
+   *
+   * NOTE: Adding a source will send the request.
+   */
+  Future addSource(Source source, [int start=0]) {
+    if (start >= source.length)
+      return new Future.sync(() => sink.close());
+    return source.read(_BUFFER_SIZE).then((bytes) {
+      sink.add(bytes);
+      return addSource(source, start + _BUFFER_SIZE);
+    });
+  }
 }
 
 class RpcResponse implements http.Response {
