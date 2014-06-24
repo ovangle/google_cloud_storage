@@ -29,7 +29,7 @@ abstract class BucketRequests implements ConnectionBase {
         String selector: "*"
       }) {
     return new Future.sync(() {
-      var query = new _Query(projectId)
+      var query = new _Query()
           ..['ifMetagenerationMatch'] = ifMetagenerationMatch
           ..['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch
           ..['projection'] = projection
@@ -37,9 +37,11 @@ abstract class BucketRequests implements ConnectionBase {
       logger.info("Fetching bucket $name");
       return _remoteProcedureCall(
           "/b/$name",
-          query: query,
-          handler: _handleStorageBucketResponse(selector)
+          query: query
       );
+    }).then((rpcResponse) {
+      print(rpcResponse);
+      return new StorageObject.fromJson(rpcResponse.jsonBody, selector: selector);
     });
   }
 
@@ -64,7 +66,7 @@ abstract class BucketRequests implements ConnectionBase {
     if (selector != "*") {
       fields += "($selector)";
     }
-    var query = new _Query(projectId)
+    var query = new _Query()
         ..['maxResults'] = (maxResults >= 0) ? maxResults : null
         ..['projection'] = projection
         ..['fields'] = fields;
@@ -113,7 +115,7 @@ abstract class BucketRequests implements ConnectionBase {
 
       _checkValidBucketName(bucket.name);
 
-      var query = new _Query(projectId)
+      var query = new _Query()
           ..['projection'] = projection
           ..['fields'] = selector;
 
@@ -126,9 +128,10 @@ abstract class BucketRequests implements ConnectionBase {
           method: "POST",
           query: query,
           headers: headers,
-          body: bucket,
-          handler: _handleStorageBucketResponse(selector));
-    });
+          body: bucket);
+    }).then((response) =>
+        new StorageBucket.fromJson(response.jsonBody, selector: selector)
+    );
   }
 
   /**
@@ -146,7 +149,7 @@ abstract class BucketRequests implements ConnectionBase {
         int ifMetagenerationNotMatch
       }) {
     return new Future.sync(() {
-      var query = new _Query(projectId)
+      var query = new _Query()
           ..['ifMetagenerationMatch'] = ifMetagenerationMatch
           ..['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch;
 
@@ -154,9 +157,8 @@ abstract class BucketRequests implements ConnectionBase {
       return _remoteProcedureCall(
           "/b/$bucket",
           method: "DELETE",
-          query: query,
-          handler: _handleEmptyResponse)
-          .whenComplete(() => "bucket $bucket deleted");
+          query: query
+          );
     });
   }
 
@@ -206,7 +208,7 @@ abstract class BucketRequests implements ConnectionBase {
         String resultSelector
       }) {
     return new Future.sync(() {
-      var query = new _Query(projectId)
+      var query = new _Query()
           ..['ifMetagenerationMatch'] = ifMetagenerationMatch
           ..['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch
           ..['projection'] = projection
@@ -221,23 +223,14 @@ abstract class BucketRequests implements ConnectionBase {
 
       return _readModifyPatch(
           "/b/$bucket", query, headers, modify,
-          readHandler: _handleStorageBucketResponse(readSelector),
-          resultSelector: resultSelector,
-          resultHandler: _handleStorageBucketResponse(resultSelector)
-      ).whenComplete(() => "patched bucket ${bucket} successfully");
+          readHandler: (rpcResponse) => new StorageBucket.fromJson(rpcResponse.jsonBody, selector: readSelector),
+          resultSelector: resultSelector
+      )
+      .then((rpcResponse) {
+        return new StorageBucket.fromJson(rpcResponse.jsonBody, selector: resultSelector);
+      });
     });
   }
-
-  /**
-   * A response handler that handles responses which are expected to contain
-   * a single [StorageBucket] (with fields selected by the given [:selector:])
-   */
-  _ResponseHandler _handleStorageBucketResponse(String selector) {
-    return (_RemoteProcedureCall rpc, http.BaseResponse response) =>
-        _handleJsonResponse(rpc, response)
-        .then((json) => new StorageBucket.fromJson(json, selector: selector));
-  }
-
 }
 
 final _BUCKET_NAME = new RegExp(r'^[a-z0-9]([a-zA-Z0-9_.-]+)[a-z0-9]$');

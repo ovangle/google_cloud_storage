@@ -45,7 +45,7 @@ abstract class ObjectRequests implements ConnectionBase {
         String selector: '*'
       }) {
     return new Future.sync(() {
-      var query = new _Query(projectId)
+      var query = new _Query()
           ..['generation'] = generation
           ..['ifGenerationMatch'] = ifGenerationMatch
           ..['ifGenerationNotMatch'] = ifMetagenerationMatch
@@ -58,9 +58,10 @@ abstract class ObjectRequests implements ConnectionBase {
 
       return _remoteProcedureCall(
           "/b/$bucket/o/$object",
-          query: query,
-          handler: _handleStorageObjectResponse(selector));
-    });
+          query: query
+      );
+    })
+    .then((response) => new StorageObject.fromJson(response.jsonBody, selector: selector));
   }
 
   /**
@@ -89,7 +90,7 @@ abstract class ObjectRequests implements ConnectionBase {
         int ifMetagenerationNotMatch
       }) {
     return new Future.sync(() {
-      var query = new _Query(projectId)
+      var query = new _Query()
           ..['generation'] = generation
           ..['ifGenerationMatch'] = ifGenerationMatch
           ..['ifGenerationNotMatch'] = ifGenerationNotMatch
@@ -100,8 +101,7 @@ abstract class ObjectRequests implements ConnectionBase {
       return _remoteProcedureCall(
           "/b/$bucket/o/$object",
           method: "DELETE",
-          query: query,
-          handler: _handleEmptyResponse);
+          query: query);
     });
   }
 
@@ -155,7 +155,7 @@ abstract class ObjectRequests implements ConnectionBase {
       var headers = new Map()
         ..[HttpHeaders.CONTENT_TYPE] = _JSON_CONTENT;
 
-      var query = new _Query(projectId)
+      var query = new _Query()
           ..['generation'] = generation
           ..['ifGenerationMatch'] = ifGenerationMatch
           ..['ifGenerationNotMatch'] = ifGenerationNotMatch
@@ -166,17 +166,13 @@ abstract class ObjectRequests implements ConnectionBase {
           ..['fields'] = readSelector;
 
       resultSelector = (resultSelector != null) ? resultSelector : readSelector;
-      object = _urlEncode(object);
+
 
       return _readModifyPatch(
-          "/b/$bucket/o/$object", query, headers, modify,
-          readHandler: _handleStorageObjectResponse(readSelector),
-          resultSelector: resultSelector,
-          resultHandler: _handleStorageObjectResponse(resultSelector)
-      );
-
-
-
+          "/b/$bucket/o/${_urlEncode(object)}", query, headers, modify,
+          readHandler: (rpcResponse) => new StorageObject.fromJson(rpcResponse.jsonBody, selector: readSelector),
+          resultSelector: resultSelector
+      ).then((response) => new StorageObject.fromJson(response.jsonBody, selector: resultSelector));
     });
   }
 
@@ -246,7 +242,7 @@ abstract class ObjectRequests implements ConnectionBase {
       Map<String,String> headers = new Map<String,String>()
           ..[HttpHeaders.CONTENT_TYPE] = _JSON_CONTENT;
 
-      var query = new _Query(projectId)
+      var query = new _Query()
           ..['sourceGeneration'] = sourceGeneration
           ..['ifSourceGenerationMatch'] = ifSourceGenerationMatch
           ..['ifSourceGenerationNotMatch'] = ifSourceGenerationNotMatch
@@ -262,16 +258,14 @@ abstract class ObjectRequests implements ConnectionBase {
 
       sourceObject = _urlEncode(sourceObject);
       var destObject = _urlEncode(destinationObject.name);
-
       return _remoteProcedureCall(
           "/b/$sourceBucket/o/$sourceObject/copyTo/b/$destinationBucket/o/$destObject",
           method: "POST",
           headers: headers,
           query: query,
-          body: destinationObject,
-          handler: _handleStorageObjectResponse(selector));
+          body: destinationObject);
 
-    });
+    }).then((response) => new StorageObject.fromJson(response.jsonBody, selector: selector));
 
   }
 
@@ -325,7 +319,7 @@ abstract class ObjectRequests implements ConnectionBase {
       var headers = new Map()
           ..[HttpHeaders.CONTENT_TYPE] = _JSON_CONTENT;
 
-      var query = new _Query(projectId)
+      var query = new _Query()
           ..['destinationPredefinedAcl'] = PredefinedAcl.PRIVATE
           ..['ifGenerationMatch'] = ifGenerationMatch
           ..['ifMetagenerationMatch'] = ifMetagenerationMatch
@@ -339,13 +333,12 @@ abstract class ObjectRequests implements ConnectionBase {
 
       var destObject = _urlEncode(destinationObject.name);
       return _remoteProcedureCall(
-          "/b/$destinationBucket/o/$destObject/compose",
+          "/b/$destinationBucket/o/$destObject",
           method: "POST",
           headers: headers,
           query: query,
-          body: body,
-          handler: _handleStorageObjectResponse(selector));
-    });
+          body: body);
+    }).then((response) => new StorageObject.fromJson(response.jsonBody, selector: selector));
   }
 
 
@@ -420,7 +413,7 @@ abstract class ObjectRequests implements ConnectionBase {
     if (selector != "*") {
       fields = fields + "($selector)";
     }
-    var query = new _Query(projectId)
+    var query = new _Query()
         ..['maxResults'] = (maxResults >= 0) ? maxResults : null
         ..['projection'] = projection
         ..['delimiter'] = delimiter
@@ -454,12 +447,6 @@ abstract class ObjectRequests implements ConnectionBase {
 
     return _pagedRemoteProcedureCall("/b/$bucket/o", query: query)
         .expand(expandPage);
-  }
-
-  _ResponseHandler _handleStorageObjectResponse(String selector) {
-    return (_RemoteProcedureCall rpc, http.BaseResponse response) =>
-        _handleJsonResponse(rpc, response)
-        .then((result) => new StorageObject.fromJson(result, selector: selector));
   }
 
   //TODO: Object change notifications.

@@ -27,13 +27,6 @@ void main() {
       expect(() => source.setPosition(10), throws);
     });
 
-    test("should be able to get the md5 hash of the source", () {
-      var source = new FileSource(testFile);
-      return source.md5().then((bytes) {
-        expect(CryptoUtils.bytesToBase64(bytes), "XUFAKrxLKna5cZ2REBfFkg==");
-      });
-    });
-
     test("should be able to read a given number of bytes from a source", () {
       var source = new FileSource(testFile);
       source.setPosition(2);

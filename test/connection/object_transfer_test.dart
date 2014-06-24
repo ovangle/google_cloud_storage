@@ -4,9 +4,13 @@ import 'dart:async';
 import 'dart:convert' show UTF8, JSON;
 
 import 'package:unittest/unittest.dart';
+import 'package:mock/mock.dart';
 
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+
+import 'package:google_cloud_storage/connection/rpc.dart';
+import 'package:google_cloud_storage/connection/resume_token.dart';
 
 import '../../lib/api/api.dart';
 import '../../lib/connection/connection.dart';
@@ -17,31 +21,29 @@ import '../../lib/utils/content_range.dart';
 void main() {
   group("object upload", () {
     test("should be able to successfully initialise an upload", () {
+      var requestCount = 0;
       Future<http.StreamedResponse> streamHandler(http.BaseRequest request, http.ByteStream bodyStream) {
-        expect(request.headers['X-Upload-Content-Type'], 'text/plain');
-        expect(request.headers['X-Upload-Content-Length'], '26');
-        expect(request.headers['X-Upload-Content-MD5'], 'w/zT12GS5AB9+0lsymfhOw==');
-        expect(request.headers['content-type'], 'application/json; charset=UTF-8');
+        if (requestCount++ == 0) {
+          expect(request.headers['X-Upload-Content-Type'], 'text/plain');
+          expect(request.headers['X-Upload-Content-Length'], '26');
+          expect(request.headers['content-type'], 'application/json; charset=utf-8');
+          expect(request.url.queryParameters['uploadType'], 'resumable');
 
-        expect(request.url.queryParameters['uploadType'], 'resumable');
-
-        return bodyStream.expand((i) => i).toList().then((bytes) {
-          expect(
-              JSON.decode(UTF8.decode(bytes)),
-              { 'bucket': 'bucket', 'name': 'object', 'metadata': {'hello':'world'} }
-          );
-        }).then((_) {
-          return new http.StreamedResponse(
-              new Stream.fromIterable([]),
-              200,
-              headers: { 'location': 'http://example.com'}
-          );
-        });
+          return bodyStream.expand((i) => i).toList().then((bytes) =>
+            expect(JSON.decode(UTF8.decode(bytes)), {
+                'bucket': 'bucket', 'name': 'object', 'metadata': { 'hello':'world' }})).then((_) =>
+            new http.StreamedResponse(new Stream.fromIterable([]), 200,
+                headers: { 'location': 'http://example.com' }));
+        } else {
+          return bodyStream.expand((i) => i).toList().then(expectAsync((bytes) {
+            expect(bytes, UTF8.encode("abcdefghijklmnopqrstuvwxyz"));
+          })).then((_) => new http.StreamedResponse( new Stream.fromIterable(['']), 200));
+        }
       }
 
       var connection = new Connection(
           'proj_id',
-          new MockClient.streaming(streamHandler)
+          new MockRpcClient(streamHandler)
       );
 
       var obj = new StorageObject("bucket", "object")
@@ -49,7 +51,11 @@ void main() {
       var src = new StringSource("abcdefghijklmnopqrstuvwxyz");
       return connection.uploadObject("bucket", obj, 'text/plain', src).then((resumeToken) {
         expect(resumeToken.uploadUri, Uri.parse("http://example.com"));
-        expect(resumeToken.range, new Range(0,-1));
+        expect(resumeToken.range, null);
+        expect(resumeToken.done != null, true);
+        resumeToken.done.then(expectAsync((RpcResponse resp) {
+          expect(resp.statusCode, 200);
+        }));
       });
     });
 
@@ -59,7 +65,7 @@ void main() {
       Future<http.StreamedResponse> streamHandler(http.BaseRequest request, http.ByteStream bodyStream) {
         var response = new http.StreamedResponse(
             new Stream.fromIterable([]),
-            (retryCount++ < 2) ? 408: 200,
+            (retryCount++ < 2) ? 504: 200,
             headers: {'location': 'http://example.com' }
         );
         return new Future.value(response);
@@ -67,7 +73,7 @@ void main() {
 
       var connection = new Connection(
           'proj_id',
-          new MockClient.streaming(streamHandler)
+          new MockRpcClient(streamHandler)
       );
 
       //connection.logger.onRecord.listen(print);
@@ -75,7 +81,7 @@ void main() {
       var src = new StringSource("abcdefghijklmnopqrstuvwxyz");
       return connection.uploadObject("bucket", "object", "text/plain", src).then((resumeToken) {
         expect(resumeToken.uploadUri, Uri.parse("http://example.com"));
-        expect(resumeToken.range, new Range(0,-1));
+        expect(resumeToken.range, null);
       });
     });
 
@@ -92,7 +98,7 @@ void main() {
 
       var connection = new Connection(
           'proj_id',
-          new MockClient.streaming(streamHandler)
+          new MockRpcClient(streamHandler)
       );
 
       var src = new StringSource("abcdefghijklmnopqrstuvwxyz");
@@ -100,9 +106,8 @@ void main() {
           new ResumeToken(
               ResumeToken.TOKEN_INTERRUPTED,
               Uri.parse('http://example.com'),
-              new Range(0,13),
-              null,
-              '*'
+              selector: '*',
+              range: new Range(0,13)
           ),
           src
       ).then((resumeToken) {
@@ -152,33 +157,39 @@ void main() {
       }).then((_) {
         print("Response body: $responseBody");
         return new http.StreamedResponse(
-            new Stream.fromIterable([responseBody]),
-            status,
-            headers: headers
-            );
+            new Stream.fromIterable([responseBody]), status, headers: headers);
       });
     }
 
-    var connection = new Connection(
-        'proj_id',
-        new MockClient.streaming(streamHandler)
-    );
+    var connection = new Connection('proj_id', new MockRpcClient(streamHandler));
 
     connection.logger.onRecord.listen(print);
 
     var src = new StringSource("abcdefghijklmnopqrstuvwxyz");
     return connection.resumeUpload(
-        new ResumeToken(
-            ResumeToken.TOKEN_INIT,
-            Uri.parse('http://www.example.com'),
-            new Range(0,0),
-            null,
-            '*'),
-        src)
-        .then((obj) {
-          print(obj);
-        });
+        new ResumeToken(ResumeToken.TOKEN_INIT, Uri.parse('http://www.example.com'), selector: '*'), src)
+            .then((obj) {
+              print(obj);
+            });
 
   });
+
+}
+
+class MockRpcClient extends RpcClient implements Mock {
+
+  final http.BaseClient baseClient;
+
+  MockRpcClient._(baseClient, streamHandler): this.baseClient = baseClient, super(baseClient) {
+  }
+
+  factory MockRpcClient(streamHandler) {
+    return new MockRpcClient._(new MockClient.streaming(streamHandler), streamHandler);
+  }
+
+  Future<RpcRequest> authorize(RpcRequest request) {
+    request.headers['Authorization'] = 'Bearer someToken';
+    return new Future.value(request);
+  }
 
 }

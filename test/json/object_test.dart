@@ -5,7 +5,7 @@ import 'package:unittest/unittest.dart';
 import '../../lib/json/object.dart';
 
 class MockUser extends JsonObject {
-  static final OBJECT_DATA =
+  static Map _genObjectData() =>
     { 'user_id' : 454545,
       'screen_name' : 'fantastic_user',
       'aliases' : [ 'fantastic_man', 'super_fantastic_man' ],
@@ -15,7 +15,7 @@ class MockUser extends JsonObject {
            'title' : 'Fantastic events are fantastic',
            'mentioned_users' : [
              { 'user_id' : 22464,
-               'screen_name' : 'fantastic_friend' 
+               'screen_name' : 'fantastic_friend'
              },
              { 'user_id' : 666,
                'screen_name' : 'fantastic_girl'
@@ -27,70 +27,75 @@ class MockUser extends JsonObject {
            'post_id' : 22562,
            'title' : 'Even more fantastic events',
            'mentioned_users' : [],
-           'content' : 'Not as fantastic as other events' 
+           'content' : 'Not as fantastic as other events'
          }
       ],
-      'image' : 
+      'image' :
         { 'alt' : 'fantastic_user_image',
           'href' : 'https://fantastic.com/image.jpg'
         }
     };
-  
+
   int get userId => getField("user_id");
-  
+
   String get screenName => getField("screen_name");
   set screenName(String value) => setField("screen_name", value);
-  
+
   List<String> get aliases => getField("aliases");
-  
+
   MockImage get image => new MockImage._delegate(this, "image");
   set image(MockImage image) => setField("image", image);
-  
+
   String get nonExistentField => getField("field_a");
   set nonExistentField(String value) => setField("field_a", value);
-  
+
   List<JsonObject> get posts => new JsonList(
-      this, "posts", 
+      this, "posts",
       (path) => new MockPost._delegate(this, path));
-  
+
   MockUser.delegate(JsonObject obj, path, {String selector: "*"}):
     super.delegate(obj, path);
-  
-  MockUser(String selector) : 
-    super(OBJECT_DATA, selector: selector);
-  
+
+  MockUser(String selector) :
+    super(_genObjectData(), selector: selector);
+
 }
 
 class MockImage extends JsonObject {
   String get alt => getField("alt");
   set alt(String value) => setField("alt", value);
   String get href => getField("href");
-  
+
   MockImage._delegate(JsonObject delegate, String pathToImage) :
     super.delegate(delegate, pathToImage);
-  
+
   MockImage(String alt, String href) : super({'alt': alt, 'href':href});
 }
 
 class MockPost extends JsonObject {
   int get postId => getField("post_id");
-  
+
   String get title => getField("title");
   set title(String value) => setField("title", value);
-  
-  List<JsonObject> get mentionedUsers => 
-      new JsonList(this, "mentioned_users", 
+
+  List<JsonObject> get mentionedUsers =>
+      new JsonList(this, "mentioned_users",
           (path) => new MockUser.delegate(this, path, selector: "user_id,screen_name"));
-  
+
   MockPost._delegate(JsonObject delegate, var pathToPost) :
     super.delegate(delegate, pathToPost);
-  
+
 }
 
 void main() {
   group("json object", () {
     group("(all selected)", () {
-      var mockObject = new MockUser("*");
+      var mockObject;
+
+      setUp(() {
+        mockObject = new MockUser('*');
+      });
+      tearDown(() => mockObject = null);
 
       test("should be able to get the 'id'", () {
         expect(mockObject.userId, 454545);
@@ -116,7 +121,7 @@ void main() {
         mockObject.aliases.add("mr_awesomely_fantastic");
         expect(mockObject.aliases, ['fantastic_man', 'super_fantastic_man', 'mr_awesomely_fantastic']);
       });
-      
+
       test("should be able to set the value of a nonexistent field", () {
         expect(mockObject.nonExistentField, null, reason: "before set");
         mockObject.nonExistentField = "hello";
@@ -127,7 +132,7 @@ void main() {
         expect(mockObject.posts.map(
             (post) => post.getField("post_id")), [14464, 22562]);
       });
-      
+
       test("modifying a post should modify the object", () {
         var post = mockObject.posts.first;
         print(post.toJson());
@@ -135,7 +140,7 @@ void main() {
         post.title = 'Even more fantastic events';
         expect(mockObject.posts.first.title, 'Even more fantastic events', reason: 'after set');
       });
-      
+
       test("should be able to get the mentioned users from a post", () {
         var post = mockObject.posts.first;
         var mentioned = post.mentionedUsers.first;
@@ -143,8 +148,14 @@ void main() {
         expect(post.mentionedUsers.map(
             (user) => user.userId), [22464, 666]);
       });
-      
+
+      test("mock image to json", () {
+        var imageJson = mockObject.image.toJson();
+        expect(imageJson, { 'alt' : 'fantastic_user_image',
+          'href' : 'https://fantastic.com/image.jpg'
+        });
+      });
     });
   });
-  
+
 }
