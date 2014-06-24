@@ -21,25 +21,24 @@ import '../../lib/utils/content_range.dart';
 void main() {
   group("object upload", () {
     test("should be able to successfully initialise an upload", () {
+      var requestCount = 0;
       Future<http.StreamedResponse> streamHandler(http.BaseRequest request, http.ByteStream bodyStream) {
-        expect(request.headers['X-Upload-Content-Type'], 'text/plain');
-        expect(request.headers['X-Upload-Content-Length'], '26');
-        expect(request.headers['content-type'], 'application/json; charset=utf-8');
+        if (requestCount++ == 0) {
+          expect(request.headers['X-Upload-Content-Type'], 'text/plain');
+          expect(request.headers['X-Upload-Content-Length'], '26');
+          expect(request.headers['content-type'], 'application/json; charset=utf-8');
+          expect(request.url.queryParameters['uploadType'], 'resumable');
 
-        expect(request.url.queryParameters['uploadType'], 'resumable');
-
-        return bodyStream.expand((i) => i).toList().then((bytes) {
-          expect(
-              JSON.decode(UTF8.decode(bytes)),
-              { 'bucket': 'bucket', 'name': 'object', 'metadata': {'hello':'world'} }
-          );
-        }).then((_) {
-          return new http.StreamedResponse(
-              new Stream.fromIterable([]),
-              200,
-              headers: { 'location': 'http://example.com'}
-          );
-        });
+          return bodyStream.expand((i) => i).toList().then((bytes) =>
+            expect(JSON.decode(UTF8.decode(bytes)), {
+                'bucket': 'bucket', 'name': 'object', 'metadata': { 'hello':'world' }})).then((_) =>
+            new http.StreamedResponse(new Stream.fromIterable([]), 200,
+                headers: { 'location': 'http://example.com' }));
+        } else {
+          return bodyStream.expand((i) => i).toList().then(expectAsync((bytes) {
+            expect(bytes, UTF8.encode("abcdefghijklmnopqrstuvwxyz"));
+          })).then((_) => new http.StreamedResponse( new Stream.fromIterable(['']), 200));
+        }
       }
 
       var connection = new Connection(
@@ -53,6 +52,10 @@ void main() {
       return connection.uploadObject("bucket", obj, 'text/plain', src).then((resumeToken) {
         expect(resumeToken.uploadUri, Uri.parse("http://example.com"));
         expect(resumeToken.range, null);
+        expect(resumeToken.done != null, true);
+        resumeToken.done.then(expectAsync((RpcResponse resp) {
+          expect(resp.statusCode, 200);
+        }));
       });
     });
 
@@ -103,6 +106,7 @@ void main() {
           new ResumeToken(
               ResumeToken.TOKEN_INTERRUPTED,
               Uri.parse('http://example.com'),
+              selector: '*',
               range: new Range(0,13)
           ),
           src
@@ -153,29 +157,20 @@ void main() {
       }).then((_) {
         print("Response body: $responseBody");
         return new http.StreamedResponse(
-            new Stream.fromIterable([responseBody]),
-            status,
-            headers: headers
-            );
+            new Stream.fromIterable([responseBody]), status, headers: headers);
       });
     }
 
-    var connection = new Connection(
-        'proj_id',
-        new MockRpcClient(streamHandler)
-    );
+    var connection = new Connection('proj_id', new MockRpcClient(streamHandler));
 
     connection.logger.onRecord.listen(print);
 
     var src = new StringSource("abcdefghijklmnopqrstuvwxyz");
     return connection.resumeUpload(
-        new ResumeToken(
-            ResumeToken.TOKEN_INIT,
-            Uri.parse('http://www.example.com')),
-        src)
-        .then((obj) {
-          print(obj);
-        });
+        new ResumeToken(ResumeToken.TOKEN_INIT, Uri.parse('http://www.example.com'), selector: '*'), src)
+            .then((obj) {
+              print(obj);
+            });
 
   });
 

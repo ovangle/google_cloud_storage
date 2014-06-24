@@ -1,5 +1,7 @@
 library resume_token;
 
+import 'dart:async';
+
 import '../utils/content_range.dart';
 import 'rpc.dart';
 
@@ -37,6 +39,8 @@ class ResumeToken {
 
   final String selector;
 
+  final Future<RpcResponse> done;
+
   bool get isInit => type == TOKEN_INIT;
   bool get isComplete => type == TOKEN_COMPLETE;
 
@@ -45,9 +49,9 @@ class ResumeToken {
    */
   final Uri uploadUri;
 
-  ResumeToken(this.type, this.uploadUri, this.selector, {this.range}) : rpcResponse = null;
+  ResumeToken(this.type, this.uploadUri, {this.selector, this.done, this.range}) : rpcResponse = null;
 
-  ResumeToken.fromToken(ResumeToken token, this.type, {this.range, this.rpcResponse}):
+  ResumeToken.fromToken(ResumeToken token, this.type, {this.done, this.range, this.rpcResponse}):
     this.uploadUri = token.uploadUri,
     this.selector = token.selector;
 
@@ -64,12 +68,9 @@ class ResumeToken {
     }
     if (json['uploadUri'] == null)
       throw new TokenSerializationException("No 'uploadUri'");
-    return new ResumeToken(
-        type,
-        Uri.parse(json['uploadUri']),
-        json['selector'] != null ? json['selector'] : '*',
-        range: (json['range'] != null) ? Range.parse(json['range']) : null
-    );
+    return new ResumeToken(type, Uri.parse(json['uploadUri']),
+        selector: json['selector'] != null ? json['selector'] : '*',
+        range: (json['range'] != null) ? Range.parse(json['range']) : null);
   }
 
   /**

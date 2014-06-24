@@ -126,20 +126,22 @@ abstract class ObjectTransferRequests implements ObjectRequests {
         if (location == null)
           throw new RpcException.expectedResponseHeader('location', response);
 
+        Completer rpcRequestCompleter = new Completer();
         StreamedRpcRequest rpcRequest = new StreamedRpcRequest(Uri.parse(location), method: 'PUT');
         rpcRequest.headers.putIfAbsent('Content-Type', () => mimeType);
         source.read(source.length).then((List<int> data) {
           rpcRequest.sink.add(data);
           rpcRequest.sink.close();
-          _client.send(rpcRequest).then((RpcResponse resp) {
-            print('Resp body: ${resp.body}');
-          });
+          _client.send(rpcRequest)
+              .then((RpcResponse resp) => rpcRequestCompleter.complete(resp))
+              .catchError((e) => rpcRequestCompleter.completeError(e));
         });
 
         return new ResumeToken(
             ResumeToken.TOKEN_INIT,
             Uri.parse(location),
-            selector
+            selector: selector,
+            done: rpcRequestCompleter.future
         );
       });
     });
