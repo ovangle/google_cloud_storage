@@ -61,6 +61,8 @@ const _RETRY_STATUS =
             HttpStatus.GATEWAY_TIMEOUT
           ];
 
+const _RESUME_INCOMPLETE_STATUS = 308;
+
 const _urlEncode = Uri.encodeComponent;
 
 /**

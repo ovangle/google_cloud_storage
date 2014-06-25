@@ -32,8 +32,7 @@ void main() {
           return bodyStream.expand((i) => i).toList().then((bytes) =>
             expect(JSON.decode(UTF8.decode(bytes)), {
                 'bucket': 'bucket', 'name': 'object', 'metadata': { 'hello':'world' }})).then((_) =>
-            new http.StreamedResponse(new Stream.fromIterable([]), 200,
-                headers: { 'location': 'http://example.com' }));
+            new http.StreamedResponse(new Stream.fromIterable([]), 200, headers: { 'location': 'http://example.com' }));
         } else {
           return bodyStream.expand((i) => i).toList().then(expectAsync((bytes) {
             expect(bytes, UTF8.encode("abcdefghijklmnopqrstuvwxyz"));
@@ -49,14 +48,14 @@ void main() {
       var obj = new StorageObject("bucket", "object")
           ..metadata['hello'] = 'world';
       var src = new StringSource("abcdefghijklmnopqrstuvwxyz");
-      return connection.uploadObject("bucket", obj, 'text/plain', src).then((resumeToken) {
+      return connection.uploadObject("bucket", obj, 'text/plain', src).then(expectAsync((resumeToken) {
         expect(resumeToken.uploadUri, Uri.parse("http://example.com"));
         expect(resumeToken.range, null);
         expect(resumeToken.done != null, true);
         resumeToken.done.then(expectAsync((RpcResponse resp) {
           expect(resp.statusCode, 200);
         }));
-      });
+      }));
     });
 
     test("upload should retry an upload with a RETRY status", () {
@@ -83,38 +82,6 @@ void main() {
         expect(resumeToken.uploadUri, Uri.parse("http://example.com"));
         expect(resumeToken.range, null);
       });
-    });
-
-    test("should be able to get the status of an upload", () {
-      Future<http.StreamedResponse> streamHandler(http.BaseRequest request, http.ByteStream stream) {
-        expect(request.headers['content-range'], 'bytes */26');
-        var response = new http.StreamedResponse(
-            new Stream.fromIterable([]),
-            308,
-            headers: {'range': 'bytes=0-13'}
-        );
-        return new Future.value(response);
-      }
-
-      var connection = new Connection(
-          'proj_id',
-          new MockRpcClient(streamHandler)
-      );
-
-      var src = new StringSource("abcdefghijklmnopqrstuvwxyz");
-      return connection.getUploadStatus(
-          new ResumeToken(
-              ResumeToken.TOKEN_INTERRUPTED,
-              Uri.parse('http://example.com'),
-              selector: '*',
-              range: new Range(0,13)
-          ),
-          src
-      ).then((resumeToken) {
-        expect(resumeToken.range, new Range(0,13));
-        expect(resumeToken.uploadUri, Uri.parse("http://example.com"));
-      });
-
     });
 
   });
@@ -167,7 +134,7 @@ void main() {
 
     var src = new StringSource("abcdefghijklmnopqrstuvwxyz");
     return connection.resumeUpload(
-        new ResumeToken(ResumeToken.TOKEN_INIT, Uri.parse('http://www.example.com'), selector: '*'), src)
+        new ResumeToken(Uri.parse('http://www.example.com'), selector: '*'), src)
             .then((obj) {
               print(obj);
             });

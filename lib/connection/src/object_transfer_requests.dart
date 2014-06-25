@@ -5,6 +5,13 @@ part of connection;
  */
 const int _BUFFER_SIZE = 5 * 1024 * 1024;
 
+class _StatusResponse {
+  ResumeToken token;
+  RpcResponse response;
+
+  _StatusResponse(this.token, this.response);
+}
+
 abstract class ObjectTransferRequests implements ObjectRequests {
 
   Stream<List<int>> downloadObject(String bucket, String object, { int ifGenerationMatch, int ifGenerationNotMatch,
@@ -129,16 +136,13 @@ abstract class ObjectTransferRequests implements ObjectRequests {
         Completer rpcRequestCompleter = new Completer();
         StreamedRpcRequest rpcRequest = new StreamedRpcRequest(Uri.parse(location), method: 'PUT');
         rpcRequest.headers.putIfAbsent('Content-Type', () => mimeType);
-        source.read(source.length).then((List<int> data) {
-          rpcRequest.sink.add(data);
-          rpcRequest.sink.close();
-          _client.send(rpcRequest)
-              .then((RpcResponse resp) => rpcRequestCompleter.complete(resp))
-              .catchError((e) => rpcRequestCompleter.completeError(e));
-        });
+        rpcRequest.addSource(source);
+        _client.send(rpcRequest)
+        .then((RpcResponse resp) => rpcRequestCompleter.complete(resp))
+        .catchError((e) => rpcRequestCompleter.completeError(e));
+
 
         return new ResumeToken(
-            ResumeToken.TOKEN_INIT,
             Uri.parse(location),
             selector: selector,
             done: rpcRequestCompleter.future
@@ -157,7 +161,7 @@ abstract class ObjectTransferRequests implements ObjectRequests {
    * current upload status as it is possible that the connection was interrupted after the
    * server received the last byte but before the response was sent.
     */
-  Future<ResumeToken> getUploadStatus(ResumeToken resumeToken, Source source) {
+  Future<_StatusResponse> _getUploadStatus(ResumeToken resumeToken, Source source) {
     return new Future.sync(() {
 
       var contentRange = new ContentRange(null, source.length);
@@ -168,16 +172,16 @@ abstract class ObjectTransferRequests implements ObjectRequests {
       return _client.send(request).then((response) {
         if (response.statusCode == HttpStatus.OK ||
             response.statusCode == HttpStatus.CREATED) {
-          return new ResumeToken.fromToken(resumeToken, ResumeToken.TOKEN_COMPLETE, rpcResponse: response);
+          return new ResumeToken.fromToken(resumeToken);
         }
 
         if (response.statusCode == HttpStatus.PARTIAL_CONTENT ||
             response.statusCode == 308 /* Resume Incomplete */) {
           if (response.headers.containsKey('range')) {
             var range = response.headers['range'];
-            return new ResumeToken.fromToken(resumeToken, ResumeToken.TOKEN_INTERRUPTED, range: Range.parse(range));
+            return new _StatusResponse(new ResumeToken.fromToken(resumeToken, range: Range.parse(range)), response);
           } else {
-            return new ResumeToken.fromToken(resumeToken, ResumeToken.TOKEN_INTERRUPTED);
+            return new _StatusResponse(new ResumeToken.fromToken(resumeToken), response);
           }
 
         }
@@ -188,44 +192,28 @@ abstract class ObjectTransferRequests implements ObjectRequests {
   }
 
   Future<StorageObject> resumeUpload(ResumeToken resumeToken, Source source) {
-    return new Future.sync(() {
-      if (resumeToken.isComplete)
-        throw new StateError('Upload already complete');
+    return _getUploadStatus(resumeToken, source).then((_StatusResponse statusResponse) {
+      return _handleResumeResponse(statusResponse.response, statusResponse.token, source);
+    });
+  }
 
-      var rangeToUpload = (resumeToken.range != null  ? new Range(resumeToken.range.hi + 1, source.length - 1) :
-          new Range(0, source.length -1));
-
+  Future<RpcResponse> _handleResumeResponse(RpcResponse response, ResumeToken token, Source source) {
+    if (response.statusCode == _RESUME_INCOMPLETE_STATUS) {
+      var rangeToUpload = (token.range != null  ? new Range(token.range.hi + 1, source.length - 1) : new Range(0, source.length -1));
       var contentRange = new ContentRange(rangeToUpload, source.length);
 
-      var request = new StreamedRpcRequest(resumeToken.uploadUri, method: "PUT")
-          ..headers['content-range'] = contentRange.toString();
+      var request = new StreamedRpcRequest(token.uploadUri, method: "PUT")
+        ..headers['content-range'] = contentRange.toString()
+        ..addSource(source, rangeToUpload.lo);
 
-      //Add the source to the request
-      request.addSource(source, rangeToUpload.lo);
-
-      return _client.send(request, retryRequest: false).then((RpcResponse response) {
-        handler(RpcResponse response) =>
-            new StorageObject.fromJson(response.jsonBody, selector: resumeToken.selector);
-
-        if (_RETRY_STATUS.contains(response.statusCode)) {
-          return getUploadStatus(resumeToken, source).then((resumeToken) {
-            if (resumeToken.isComplete) {
-              //Use stored response to get the object metadata.
-              return handler(resumeToken.rpcResponse);
-            } else {
-              //Otherwise we still have bytes to upload. Resume the upload.
-              return resumeUpload(resumeToken, source);
-            }
-          });
-
-        } else if (response.statusCode == HttpStatus.OK
-            || response.statusCode == HttpStatus.CREATED) {
-          return handler(response);
-        } else {
-          throw new RpcException.invalidStatus(response);
-        }
-      });
-    });
+      return _client.send(request, retryRequest: false).then((RpcResponse response) => _handleResumeResponse(response, token, source));
+    } else if (_RETRY_STATUS.contains(response.statusCode)) {
+      return resumeUpload(token, source);
+    } else if ([HttpStatus.OK, HttpStatus.CREATED].contains(response.statusCode)) {
+      return new StorageObject.fromJson(response.jsonBody, selector: token.selector);
+    } else {
+      throw new RpcException.invalidStatus(response);
+    }
   }
 
 }

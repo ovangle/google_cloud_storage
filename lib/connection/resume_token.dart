@@ -7,26 +7,13 @@ import 'rpc.dart';
 
 /**
  * A token which can be used to resume an upload from the point in the source where it failed.
+ *
+ * The token is obtained as a result of calling [uploadObject] method on [Connection]. It
+ * contains information necessary to resume a failed or interrupted upload. The token can be
+ * serialized and deserialized. This is most useful for situations where upload information
+ * needs to be preserved across browser sessions or persisted into some storage.
  */
 class ResumeToken {
-  /**
-   * The token obtained from the `uploadObject` method
-   */
-  static const TOKEN_INIT = 0;
-  /**
-   * The token obtained when a upload request was interrupted
-   */
-  static const TOKEN_INTERRUPTED = 1;
-  /**
-   * A token obtained when the upload is complete.
-   */
-  static const TOKEN_COMPLETE = 2;
-
-  /**
-   * The type of the token. One of [TOKEN_INIT], [TOKEN_INTERRUPTED] or [TOKEN_COMPLETE]
-   */
-  final int type;
-
   /**
    * The range (inclusive of start and end bytes) that has already been uploaded
    * to the server when this token was created.
@@ -35,23 +22,26 @@ class ResumeToken {
    */
   final Range range;
 
-  final RpcResponse rpcResponse;
-
+  /**
+   * Selector specifying a subset of fields to include in the response. For more information see
+   * https://developers.google.com/storage/docs/json_api/v1/how-tos/performance#partial.
+   */
   final String selector;
 
+  /**
+   * A Future which will be resolved once the upload completes (either successfully or if it fails).
+   */
   final Future<RpcResponse> done;
-
-  bool get isInit => type == TOKEN_INIT;
-  bool get isComplete => type == TOKEN_COMPLETE;
 
   /**
    * The endpoint of the upload service
    */
   final Uri uploadUri;
 
-  ResumeToken(this.type, this.uploadUri, {this.selector, this.done, this.range}) : rpcResponse = null;
+  ResumeToken(this.uploadUri, {this.selector, this.done, this.range});
 
-  ResumeToken.fromToken(ResumeToken token, this.type, {this.done, this.range, this.rpcResponse}):
+
+  ResumeToken.fromToken(ResumeToken token, {this.done, this.range}):
     this.uploadUri = token.uploadUri,
     this.selector = token.selector;
 
@@ -68,8 +58,9 @@ class ResumeToken {
     }
     if (json['uploadUri'] == null)
       throw new TokenSerializationException("No 'uploadUri'");
-    return new ResumeToken(type, Uri.parse(json['uploadUri']),
-        selector: json['selector'] != null ? json['selector'] : '*',
+    if (json['done'] != null)
+      throw new TokenSerializationException("Invalid resume token. 'done' attribute found.");
+    return new ResumeToken(Uri.parse(json['uploadUri']), selector: json['selector'] != null ? json['selector'] : '*',
         range: (json['range'] != null) ? Range.parse(json['range']) : null);
   }
 
@@ -78,7 +69,6 @@ class ResumeToken {
    */
   Map<String,dynamic> toJson() {
     var json = {
-        'type': type,
         'uploadUri': uploadUri.toString(),
         'selector': selector
     };
