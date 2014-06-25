@@ -55,7 +55,7 @@ class ContentRange {
  * NOTE: According to the W3C specification, a range is specified inclusive of the start and end bytes.
  */
 class Range {
-  static final Pattern _RANGE = new RegExp(r'bytes=([0-9]+)-([0-9]+)$');
+  static final Pattern _RANGE = new RegExp(r'([0-9]+)-([0-9]+)$');
   static Range parse(String range) {
     var match = _RANGE.matchAsPrefix(range);
     if (match == null) {

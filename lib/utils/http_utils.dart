@@ -134,6 +134,7 @@ abstract class HttpStatus {
   static const int NOT_MODIFIED = 304;
   static const int USE_PROXY = 305;
   static const int TEMPORARY_REDIRECT = 307;
+  static const int RESUME_INCOMPLETE = 308;
   static const int BAD_REQUEST = 400;
   static const int UNAUTHORIZED = 401;
   static const int PAYMENT_REQUIRED = 402;

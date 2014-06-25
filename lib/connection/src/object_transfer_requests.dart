@@ -103,9 +103,11 @@ abstract class ObjectTransferRequests implements ObjectRequests {
         .catchError((e) => rpcRequestCompleter.completeError(e));
 
 
+        var selector = queryParams['fields'];
+
         return new ResumeToken(
             Uri.parse(location),
-            selector: queryParams['fields'],
+            selector: selector != null ? selector: '*',
             done: rpcRequestCompleter.future
         );
       });
@@ -155,7 +157,7 @@ abstract class ObjectTransferRequests implements ObjectRequests {
   }
 
   Future<RpcResponse> _handleResumeResponse(RpcResponse response, ResumeToken token, Source source) {
-    if (response.statusCode == _RESUME_INCOMPLETE_STATUS) {
+    if (response.statusCode == HttpStatus.RESUME_INCOMPLETE) {
       var rangeToUpload = (token.range != null  ? new Range(token.range.hi + 1, source.length - 1) : new Range(0, source.length -1));
       var contentRange = new ContentRange(rangeToUpload, source.length);
 

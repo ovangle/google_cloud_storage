@@ -30,13 +30,18 @@ void main() {
           expect(request.url.queryParameters['uploadType'], 'resumable');
 
           return bodyStream.expand((i) => i).toList().then((bytes) =>
-            expect(JSON.decode(UTF8.decode(bytes)), {
+              expect(JSON.decode(UTF8.decode(bytes)), {
                 'bucket': 'bucket', 'name': 'object', 'metadata': { 'hello':'world' }})).then((_) =>
-            new http.StreamedResponse(new Stream.fromIterable([]), 200, headers: { 'location': 'http://example.com' }));
+                    new http.StreamedResponse(new Stream.fromIterable([]), 200,
+                        headers: { 'location': 'http://example.com' }));
         } else {
           return bodyStream.expand((i) => i).toList().then(expectAsync((bytes) {
             expect(bytes, UTF8.encode("abcdefghijklmnopqrstuvwxyz"));
-          })).then((_) => new http.StreamedResponse( new Stream.fromIterable(['']), 200));
+          })).then((_) {
+            Iterable<int> stream = UTF8.encode(JSON.encode({'bucket':'bucket', 'name':'object'}));
+            return new http.StreamedResponse( new Stream.fromIterable([stream]), 200,
+                headers: {'content-type' : 'application/json; charset=UTF-8'});
+          });
         }
       }
 
@@ -52,8 +57,9 @@ void main() {
         expect(resumeToken.uploadUri, Uri.parse("http://example.com"));
         expect(resumeToken.range, null);
         expect(resumeToken.done != null, true);
-        resumeToken.done.then(expectAsync((RpcResponse resp) {
-          expect(resp.statusCode, 200);
+        resumeToken.done.then(expectAsync((StorageObject so) {
+          expect(so.bucket, 'bucket');
+          expect(so.name, 'object');
         }));
       }));
     });
@@ -99,10 +105,10 @@ void main() {
       if (contentRange.range == null) {
         //Upload status.
         if (retryCount++ < 1) {
-          headers = { 'range': 'bytes=0-${(retryCount * 12)}' };
+          headers = { 'range': '0-${(retryCount * 12)}' };
           status = 308; //Partial content.
         } else {
-          headers = { 'range': 'bytes=0-25' };
+          headers = { 'range': '0-25' };
           status = 200;
         }
       } else {
@@ -139,6 +145,42 @@ void main() {
               print(obj);
             });
 
+  });
+
+  test("should be able to resume an upload from a serialized resume token", () {
+    var requestCount = 0;
+    Future<http.StreamedResponse> streamHandler(http.BaseRequest request, http.ByteStream bodyStream) {
+      if (requestCount++ == 0) {
+        expect(request.headers['authorization'], isNotNull);
+        expect(request.headers['content-range'], 'bytes */26');
+        // TODO (@marko) Find out if not setting length to 0 can cause issues.
+        // expect(request.headers['content-length'], isZero);
+        return new Future.value(new http.StreamedResponse(new Stream.fromIterable([]), 308,  headers: {
+          'range': '0-12',
+          'content-length': '0',
+        }));
+      } else {
+        expect(request.headers['authorization'], isNotNull);
+        expect(request.headers['content-range'], 'bytes 13-25/26');
+        bodyStream.expand((i) => i).toList().then((bytes) {
+          expect(bytes, UTF8.encode("nopqrstuvwxyz"));
+        });
+        var mockResponse = UTF8.encode(JSON.encode({"name": "test", "bucket": "test-bucket"}));
+        return new Future.value(new http.StreamedResponse(new Stream.fromIterable([mockResponse]), 200,
+            headers: {'content-type': 'application/json'}));
+      }
+    }
+
+    var connection = new Connection('proj_id', new MockRpcClient(streamHandler));
+
+    connection.logger.onRecord.listen(print);
+
+    var src = new StringSource("abcdefghijklmnopqrstuvwxyz");
+    return connection.resumeUpload(new ResumeToken.fromJson({'uploadUri': 'http://www.session.uri', 'selector': '*'}),
+        src).then(expectAsync((StorageObject so) {
+          expect(so.bucket, "test-bucket");
+          expect(so.name, "test");
+        }));
   });
 
 }

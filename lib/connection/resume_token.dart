@@ -3,6 +3,7 @@ library resume_token;
 import 'dart:async';
 
 import '../utils/content_range.dart';
+import '../api/api.dart';
 import 'rpc.dart';
 
 /**
@@ -31,17 +32,23 @@ class ResumeToken {
   /**
    * A Future which will be resolved once the upload completes (either successfully or if it fails).
    */
-  final Future<RpcResponse> done;
+  final Future<RpcResponse> _done;
+
+  Future<StorageObject> get done {
+    if (_done == null) throw new TokenSerializationException("Deserialized token cannot be completed. Use 'connection.resumeUpload' to refresh the token's future.");
+    return _done.then((RpcResponse response) => new StorageObject.fromJson(response.jsonBody, selector: selector));
+  }
 
   /**
    * The endpoint of the upload service
    */
   final Uri uploadUri;
 
-  ResumeToken(this.uploadUri, {this.selector, this.done, this.range});
+  ResumeToken(this.uploadUri, {done, this.range, this.selector: '*'}): _done = done;
 
 
-  ResumeToken.fromToken(ResumeToken token, {this.done, this.range}):
+  ResumeToken.fromToken(ResumeToken token, {done, this.range}):
+    _done = done,
     this.uploadUri = token.uploadUri,
     this.selector = token.selector;
 
@@ -49,18 +56,11 @@ class ResumeToken {
    * Deserialize a [ResumeToken].
    */
   factory ResumeToken.fromJson(Map<String,dynamic> json) {
-    var type = json['type'];
-    if (type == null) {
-      throw new TokenSerializationException("No 'type'");
-    }
-    if (type < 0 || type > 2) {
-      throw new TokenSerializationException("Invalid value for type field");
-    }
     if (json['uploadUri'] == null)
       throw new TokenSerializationException("No 'uploadUri'");
     if (json['done'] != null)
       throw new TokenSerializationException("Invalid resume token. 'done' attribute found.");
-    return new ResumeToken(Uri.parse(json['uploadUri']), selector: json['selector'] != null ? json['selector'] : '*',
+    return new ResumeToken(Uri.parse(json['uploadUri']),selector: json['selector'] != null ? json['selector'] : '*',
         range: (json['range'] != null) ? Range.parse(json['range']) : null);
   }
 
