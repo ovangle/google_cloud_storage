@@ -117,7 +117,7 @@ class MockConnection extends Mock implements Connection {
   }
 
   @override
-  Future<ResumeToken> getUploadStatus(Uri uploadUri, Source source) {
+  Future<ResumeToken> _getUploadStatus(Uri uploadUri, Source source) {
     // TODO: implement getUploadStatus
   }
 
