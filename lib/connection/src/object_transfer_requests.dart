@@ -14,8 +14,7 @@ class _StatusResponse {
 
 abstract class ObjectTransferRequests implements ObjectRequests {
 
-  Stream<List<int>> downloadObject(String bucket, String object, { int ifGenerationMatch, int ifGenerationNotMatch,
-      int ifMetagenerationMatch, int ifMetagenerationNotMatch, String projection, String selector }) {
+  Stream<List<int>> downloadObject(String bucket, String object, { Map<String, String> queryParams }) {
 
     object = _urlEncode(object);
     StreamController controller = new StreamController<List<int>>();
@@ -23,15 +22,8 @@ abstract class ObjectTransferRequests implements ObjectRequests {
     //Set the upload type to 'resumable'
     var query = new _Query();
 
-    notNull(ifGenerationMatch, () => query['ifGenerationMatch'] = ifGenerationMatch);
-    notNull(ifGenerationNotMatch, () => query['ifGenerationNotMatch'] = ifGenerationNotMatch);
-    notNull(ifMetagenerationMatch, () => query['ifMetagenerationMatch'] = ifMetagenerationMatch);
-    notNull(ifMetagenerationNotMatch, () => query['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch);
-    notNull(projection, () => query['projection'] = projection);
-    notNull(selector, () => query['field'] = selector);
-
     var uploadRpc = new RpcRequest("/b/$bucket/o/$object", headers: { HttpHeaders.RANGE: range.toString() },
-        query: query);
+        query: queryParams);
 
     _client.send(uploadRpc).then((RpcResponse resp) {
       String link = JSON.decode(resp.body)['mediaLink'];
@@ -58,38 +50,14 @@ abstract class ObjectTransferRequests implements ObjectRequests {
    *
    * [:source:] is a [Source] containing a readable object.
    *
-   * [:ifGenerationMatch:] makes the operation's success dependent on the object if it's [:generation:]
-   * matches the provided value.
-   * [:ifGenerationNotMatch:] makes the operation's success dependent if it's [:generation:]
-   * does not match the provided value.
-   * [:ifMetagenerationMatch:] makes the operation's success dependent if it's [:metageneration:]
-   * matches the provided value
-   * [:ifMetagenerationNotMatch:] makes the operation's success dependent if its [:metageneration:]
-   * does not match the provided value.
-   *
-   * [:projection:] must be one of:
-   * - `noAcl` No Access control details are included in the response (default)
-   * - `full` Access control details are specified on the response. The user making
-   * the request must have *OWNER* privileges for the [:bucket:].
-   *
-   * [:predefinedAcl:] is a [PredefinedAcl] to apply to the object. Default is [PredefinedAcl.PROJECT_PRIVATE]..
+   * [:queryParams:] is a map of items that will be appended as query parameters. Can be used to any of the parameters
+   * needed for correctly using the service.
    *
    * Returns a [Future] that completes with [ResumeToken]. This resume token can be passed directly into
    * `resumeUpload` to begin uploading the [Source].
    */
-  Future<ResumeToken> uploadObject(
-      String bucket,
-      var /* String | StorageObject */ object,
-      String mimeType,
-      Source source,
-      { int ifGenerationMatch,
-        int ifGenerationNotMatch,
-        int ifMetagenerationMatch,
-        int ifMetagenerationNotMatch,
-        PredefinedAcl predefinedAcl,
-        String projection,
-        String selector
-      }) {
+  Future<ResumeToken> uploadObject(String bucket, var /* String | StorageObject */ object, String mimeType,
+                                   Source source, { Map<String, String> queryParams }) {
     return new Future.sync(() {
       if (object is String) {
         object = new StorageObject(bucket, object);
@@ -103,20 +71,13 @@ abstract class ObjectTransferRequests implements ObjectRequests {
           ..['Content-Type'] = 'application/json; charset=utf-8';
 
       //Set the upload type to 'resumable'
-      var query = new _Query()
-        ..['uploadType'] = 'resumable';
-
-      notNull(ifGenerationMatch, () => query['ifGenerationMatch'] = ifGenerationMatch);
-      notNull(ifGenerationNotMatch, () => query['ifGenerationNotMatch'] = ifGenerationNotMatch);
-      notNull(ifMetagenerationMatch, () => query['ifMetagenerationMatch'] = ifMetagenerationMatch);
-      notNull(ifMetagenerationNotMatch, () => query['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch);
-      notNull(projection, () => query['projection'] = projection);
-      notNull(selector, () => query['fields'] = selector);
+      if (queryParams == null) queryParams = {};
+      queryParams['uploadType'] = 'resumable';
 
       var uploadRpc = new RpcRequest(
           "/b/$bucket/o",
           method: "POST",
-          query: query,
+          query: queryParams,
           isUploadRequest: true);
 
       uploadRpc.headers.addAll(headers);
@@ -144,7 +105,7 @@ abstract class ObjectTransferRequests implements ObjectRequests {
 
         return new ResumeToken(
             Uri.parse(location),
-            selector: selector,
+            selector: queryParams['fields'],
             done: rpcRequestCompleter.future
         );
       });
@@ -156,10 +117,6 @@ abstract class ObjectTransferRequests implements ObjectRequests {
    * returned by `uploadObject`.
    *
    * Returns a [ResumeToken] which can be used to resume the uploaded with the remainder of the source.
-   *
-   * It is important to check whether [:resumeToken.isCompleted:] after retrieving the
-   * current upload status as it is possible that the connection was interrupted after the
-   * server received the last byte but before the response was sent.
     */
   Future<_StatusResponse> _getUploadStatus(ResumeToken resumeToken, Source source) {
     return new Future.sync(() {
