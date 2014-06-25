@@ -269,12 +269,11 @@ class StreamedRpcRequest extends BaseRpcRequest {
 
   /**
    * Add bytes from [Source] to the request, beginning at [:start:].
-   *
-   * NOTE: Adding a source will send the request.
    */
   Future addSource(Source source, [int start=0]) {
     if (start >= source.length)
       return new Future.sync(() => sink.close());
+    source.setPosition(start);
     return source.read(_BUFFER_SIZE).then((bytes) {
       sink.add(bytes);
       return addSource(source, start + _BUFFER_SIZE);
