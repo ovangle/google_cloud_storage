@@ -161,7 +161,10 @@ class RpcRequest extends BaseRpcRequest {
     return null;
   }
 
-  set jsonBody(Map<String,dynamic> body) {
+  /**
+   * Set the body of the request. The argument must be a json encodable object
+   */
+  set jsonBody(dynamic body) {
     this.body = JSON.encode(body);
   }
 

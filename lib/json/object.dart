@@ -51,12 +51,12 @@ class JsonObject {
 
   final Selector _selector;
 
-  JsonObject.delegate(JsonObject delegate, var delegateField, {String selector: "*"}):
+  JsonObject.delegate(JsonObject delegate, var delegateField, {String selector}):
     this._(
         delegate,
         (delegateField is Path) ? delegateField : Path.parse(delegateField),
         null,
-        Selector.parse(selector)
+        Selector.parse(selector != null ? selector : '*')
     );
 
   JsonObject(Map<String,dynamic> json, {String selector: "*"}) :
@@ -64,12 +64,13 @@ class JsonObject {
         null,
         null,
         json,
-        Selector.parse(selector));
+        Selector.parse(selector != null ? selector : '*')
+    );
 
   JsonObject._(JsonObject delegate, Path this._relPath, Map<String,dynamic> json, Selector selector) :
     this._delegate = delegate,
     this._selector = selector,
-    this._json = json {
+    this._json = selector.select(json) {
     if (_delegate != null) {
       //Make sure we are in the selection
       if (!_delegate._hasFieldPath(_relPath)) {

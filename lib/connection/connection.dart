@@ -129,8 +129,8 @@ abstract class ConnectionBase {
       String path,
       { String method: "GET",
         Map<String,String> headers,
-        _Query query,
-        Map<String,dynamic> body
+        Map<String,String> query,
+        dynamic body
       }) {
     var rpc = new RpcRequest(path, method: method, query: query)
         ..headers.addAll(headers)
@@ -157,17 +157,17 @@ abstract class ConnectionBase {
   Stream<Map<String,dynamic>> _pagedRemoteProcedureCall(
       String path,
       { Map<String,String> headers,
-        _Query query
+        Map<String,String> query
       }) {
     assert(query['fields'] != null);
     var s = Selector.parse(query['fields']);
     if (!s.isPathInSelection(new FieldPath("nextPageToken")))
-      throw new ArgumentError("nextPageToken must be in selected fields");
+      throw new ArgumentError("'nextPageToken' must be in selected fields");
 
     var pageController = new StreamController<Map<String,dynamic>>();
 
     Future addNextPage(String nextPageToken) {
-      var pageQuery = new _Query.from(query)
+      var pageQuery = new Map.from(query)
           ..['pageToken'] = nextPageToken;
       logger.info("Retrieving paged results results for $nextPageToken");
       return _remoteProcedureCall(path, headers: headers, query: pageQuery)
@@ -198,27 +198,24 @@ abstract class ConnectionBase {
    */
   Future<dynamic> _readModifyPatch(
       String path,
-      _Query query,
+      Map<String,String> query,
       Map<String,String> headers,
       void modify(dynamic obj),
-      { String resultSelector,
-        dynamic readHandler}) {
-    return _remoteProcedureCall(path, query: query, headers: headers, method: "GET")
-        .then(readHandler)
-        .then((handledRead) {
-          modify(handledRead);
-          return handledRead;
-        })
-        .then((result) {
+      { dynamic readHandler(RpcResponse response) }) {
+    return _remoteProcedureCall(path, method: "GET", query: query,
+        headers: headers
+    ).then((response) => readHandler(response)).then(
+        (result) {
+         //Apply modify on the read result.
           modify(result);
-          query['fields'] = resultSelector;
-          return _remoteProcedureCall(
-              path,
-              query: query,
-              headers: headers,
-              method: "PATCH",
-              body: result);
-        });
+          return result;
+        }
+    ).then((result) {
+      return _remoteProcedureCall(path, method: "GET", query: query,
+          headers: headers,
+          body: result
+      );
+    });
   }
 }
 
@@ -229,28 +226,13 @@ class ObjectTransferException implements Exception {
   toString() => msg;
 }
 
-/**
- * Models a parametised query which will be passed via
- * a url to a remote procedure call path.
- */
-class _Query extends DelegatingMap<String,String> {
-  _Query(): super({});
+class InvalidParameterException implements Exception {
+  final String message;
+  InvalidParameterException(this.message);
 
-  _Query.from(_Query query) : super(new Map.from(query));
-
-  @override
-  void addAll(Map<String,dynamic> other) {
-    other.forEach((k,v) => this[k] = v);
-  }
-
-  //TODO: Projection should be an enum.
-
-  @override
-  void operator []=(String key, dynamic value) {
-    if (value == null) return;
-    super[key] = value.toString();
-  }
+  toString() => "Invalid query parameter: $message";
 }
+
 // FIXME: Workaround for quiver bug #125
 // forEachAsync doesn't complete if iterable is empty.
 Future _forEachAsync(Iterable iterable, Future action(var item)) {
