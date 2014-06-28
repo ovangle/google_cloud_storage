@@ -126,8 +126,6 @@ class StorageBucket extends StorageEntry {
 
   StorageBucket.fromJson(Map<String,dynamic> json, {String selector}):
     super._(json, selector: selector);
-
-  String toString() => "StorageBucket ($name)";
 }
 
 class StorageObject extends StorageEntry {
@@ -247,5 +245,5 @@ class StorageObject extends StorageEntry {
 
   StorageObject.fromJson(Map<String,dynamic> json, {String selector: "*"}): super._(json, selector: selector);
 
-  String toString() => "StorageObject ($bucket $name)";
+
 }
