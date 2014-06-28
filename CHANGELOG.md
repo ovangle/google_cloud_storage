@@ -1,3 +1,8 @@
+version 0.3.0
+=============
+
+Almost complete library rewrite. Almost no code from previous versions valid any longer
+
 version 0.2.0+2
 ===============
 
