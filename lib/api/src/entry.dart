@@ -153,12 +153,6 @@ class StorageObject extends StorageEntry {
   set acl(List<ObjectAccessControls> acl) => this.acl..clear()..addAll(acl);
 
   /**
-   * The name of the [StorageObject]
-   */
-  String get name => getField('name');
-  set name(String name) => setField('name', name);
-
-  /**
    * The name of the bucket containing this [StorageObject]
    */
   String get bucket => getField("bucket");
