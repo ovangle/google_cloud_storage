@@ -26,6 +26,11 @@ abstract class Source {
   int get position;
 
   /**
+   * The mime type of the source
+   */
+  String get contentType;
+
+  /**
    * Read a given number of bytes from the [Source].
    *
    * If there are less than [:bytes:] left in the source,
@@ -44,8 +49,9 @@ abstract class Source {
  * A [Source] which is backed by a [String].
  */
 class StringSource extends ByteSource {
-  StringSource(String source, [String encoding = 'utf-8']):
-    super(Encoding.getByName(encoding).encode(source));
+
+  StringSource(String source, String contentType, [String encoding = 'utf-8']):
+    super(Encoding.getByName(encoding).encode(source), contentType);
 }
 
 /**
@@ -55,7 +61,9 @@ class ByteSource implements Source {
   final List<int> source;
   int _pos = 0;
 
-  ByteSource(this.source);
+  final String contentType;
+
+  ByteSource(this.source, this.contentType);
 
   @override
   int get length => source.length;

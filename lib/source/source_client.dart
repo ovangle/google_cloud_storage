@@ -26,7 +26,9 @@ class BlobSource implements Source {
   FileReader reader = new FileReader();
   int _pos = 0;
 
-  BlobSource(Blob this.blob);
+  final String contentType;
+
+  BlobSource(Blob this.blob, this.contentType);
 
   @override
   int get length => blob.size;
