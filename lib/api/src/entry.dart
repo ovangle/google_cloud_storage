@@ -4,10 +4,11 @@ abstract class StorageEntry extends JsonObject {
   /**
    * Access controls on the entry.
    */
-  List<BucketAccessControls> get acl =>
-      new JsonList<BucketAccessControls>(
-          this, "acl",
-          (path) => new BucketAccessControls._delegate(this, path));
+  List<AccessControls> get acl;
+
+  set acl(List<AccessControls> acl) {
+    this.acl..clear()..addAll(acl);
+  }
 
   /**
    * The name of the entry.
@@ -52,6 +53,12 @@ abstract class StorageEntry extends JsonObject {
  */
 class StorageBucket extends StorageEntry {
 
+  List<BucketAccessControls> get acl =>
+      new JsonList<BucketAccessControls>(
+          this, "acl",
+          (path) => new BucketAccessControls._delegate(this, path));
+  set acl(List<BucketAccessControls> acl) => this.acl..clear()..addAll(acl);
+
   /**
    * The resource's [Cross-Origin Resource Sharing] configuration
    */
@@ -62,6 +69,7 @@ class StorageBucket extends StorageEntry {
       print("path: $path");
       return new CorsConfiguration._delegate(this, path);
   });
+  set cors(List<CorsConfiguration> cors) => this.cors..clear()..addAll(cors);
 
   /**
    * The default access controls for objects in this [StorageBucket]
@@ -71,6 +79,13 @@ class StorageBucket extends StorageEntry {
       new JsonList(
           this, "defaultObjectAcl",
           (path) => new ObjectAccessControls._delegate(this, path));
+  set defaultObjectAcl(List<ObjectAccessControls> objectAcl) =>
+      this.defaultObjectAcl..clear()..addAll(objectAcl);
+
+  /**
+   * The project number of the project this bucket belongs to
+   */
+  int get projectNumber => getField('projectNumber');
 
   /**
    * The lifecycle configuration of [StorageObject]s in the bucket.
@@ -129,6 +144,19 @@ class StorageBucket extends StorageEntry {
 }
 
 class StorageObject extends StorageEntry {
+  // TODO: implement acl
+  @override
+  List<ObjectAccessControls> get acl =>
+      new JsonList<ObjectAccessControls>(
+          this, "acl",
+          (path) => new ObjectAccessControls._delegate(this, path));
+  set acl(List<ObjectAccessControls> acl) => this.acl..clear()..addAll(acl);
+
+  /**
+   * The name of the [StorageObject]
+   */
+  String get name => getField('name');
+  set name(String name) => setField('name', name);
 
   /**
    * The name of the bucket containing this [StorageObject]
