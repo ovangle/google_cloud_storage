@@ -5,15 +5,15 @@
 library file_storage_html;
 
 import 'dart:async';
-import 'package:http/http.dart' as http;
-import 'package:http/browser_client.dart' as client_http;
 import 'package:google_oauth2_client/google_oauth2_browser.dart' as oauth2;
+import 'package:http/browser_client.dart' show BrowserClient;
 
 import 'connection/connection.dart' as base;
+import 'connection/rpc.dart';
 
 export 'api/api.dart';
 export 'source/source_client.dart';
-export 'connection/connection.dart' show RPCException;
+export 'connection/rpc.dart' show RpcException;
 
 class CloudStorageConnection extends base.Connection {
 
@@ -35,20 +35,20 @@ class CloudStorageConnection extends base.Connection {
     );
   }
 
-  CloudStorageConnection._(String projectId, http.Client client) :
+  CloudStorageConnection._(String projectId, RpcClient client) :
       super(projectId, client);
 
 }
 
-class _CloudStorageClient extends client_http.BrowserClient {
+class _CloudStorageClient extends RpcClient {
   oauth2.GoogleOAuth2 context;
 
-  _CloudStorageClient(this.context) : super();
+  _CloudStorageClient(this.context) : super(new BrowserClient());
 
-  Future<http.StreamedResponse> send(http.BaseRequest request) {
+  Future<BaseRpcRequest> authorize(BaseRpcRequest request) {
     return context.login().then((token) {
-      request.headers.addAll(oauth2.getAuthorizationHeaders(token.type, token.data));
-      return super.send(request);
+      return request
+          ..headers['authorization'] = 'Bearer ${token.data}';
     });
   }
 

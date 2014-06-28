@@ -75,6 +75,15 @@ class Either<L,R> {
   }
 
   /**
+   * Test whether the value should be a left or right value and create an appropriate
+   * [Either].
+   *
+   * [:test:] should return `true` on right values and `false` on left values
+   */
+  factory Either.branch(dynamic value, bool test(value)) =>
+      test(value) ? new Either.ofRight(value) : new Either.ofLeft(value);
+
+  /**
    * If `this` is the right value, returns the result of applying [:ifRight:]
    * to the value. Otherwise applies the [:ifLeft:].
    *
@@ -104,4 +113,6 @@ class Either<L,R> {
   int get hashCode => hash2(_left, _right);
 
   String toString() => isLeft ? "Left[$_left]": "Right[$_right]";
+
+  Map<String,dynamic> toJson() => {'left': _left, 'right': _right };
 }

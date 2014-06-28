@@ -9,8 +9,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
-import 'package:crypto/crypto.dart' show MD5;
-
 /**
  * An interface which represents an object from which
  * a fixed number of bytes can be read.
@@ -28,10 +26,9 @@ abstract class Source {
   int get position;
 
   /**
-   * An optional hash value used to verify the upload.
-   * Can be `null` if the upload need not be validated.
+   * The mime type of the source
    */
-  Future<List<int>> md5();
+  String get contentType;
 
   /**
    * Read a given number of bytes from the [Source].
@@ -52,8 +49,9 @@ abstract class Source {
  * A [Source] which is backed by a [String].
  */
 class StringSource extends ByteSource {
-  StringSource(String source, [String encoding = 'utf-8']):
-    super(Encoding.getByName(encoding).encode(source));
+
+  StringSource(String source, String contentType, [String encoding = 'utf-8']):
+    super(Encoding.getByName(encoding).encode(source), contentType);
 }
 
 /**
@@ -63,19 +61,12 @@ class ByteSource implements Source {
   final List<int> source;
   int _pos = 0;
 
-  ByteSource(this.source);
+  final String contentType;
+
+  ByteSource(this.source, this.contentType);
 
   @override
   int get length => source.length;
-
-  @override
-  Future<List<int>> md5() {
-    return new Future.sync(() {
-      var hash = new MD5();
-      hash.add(source);
-      return hash.close();
-    });
-  }
 
   @override
   int get position => _pos;

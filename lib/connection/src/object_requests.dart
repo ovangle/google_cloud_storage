@@ -9,256 +9,106 @@ abstract class ObjectRequests implements ConnectionBase {
   /**
    * Get the [:object:] from the given [:bucket:].
    *
-   * [:selector:] specifies what fields should be included in a partial
-   * response of the object and can be used to limit response sizes.
+   * [:queryParams:] is a map of optional query parameters to pass to the method. Infomation
+   * about the valid entries in the map can be found in the [API documenation][0].
    *
-   * [:generation:] fetches a specific version of the object, rather than the
-   * latest version (default).
-   *
-   * [:ifGenerationMatch:] only returns the object if it's [:generation:]
-   * matches the provided value. If both [:ifGenerationMatch:] and [:generation:]
-   * are provided, the values must be identical for the method to return a
-   * result.
-   * [:ifGenerationNotMatch:] only returns the object if it's [:generation:]
-   * does not match the provided value.
-   * [:ifMetagenerationMatch:] only returns the object if it's [:metageneration:]
-   * matches the provided value
-   * [:ifMetagenerationNotMatch:] only returns the object if its [:metageneration:]
-   * does not match the provided value.
-   *
-   * [:projection:] must be one of:
-   * - `noAcl` No Access control details are included in the response (default)
-   * - `full` Access control details are specified on the response. The user making
-   * the request must have *OWNER* privileges for the [:bucket:].
-   *
-   * Returns a future which completes with the selected object.
+   * [0]: https://developers.google.com/storage/docs/json_api/v1/objects/get
    */
-  Future<StorageObject> getObject(
-      String bucket,
-      String object,
-      { int generation,
-        int ifGenerationMatch,
-        int ifGenerationNotMatch,
-        int ifMetagenerationMatch,
-        int ifMetagenerationNotMatch,
-        String projection: 'noAcl',
-        String selector: '*'
-      }) {
+  Future<StorageObject> getObject(String bucket, String object,
+      { Map<String,String> queryParams: const {} }) {
+    return _remoteProcedureCall("/b/$bucket/o/${_urlEncode(object)}", query: queryParams)
+        .then((response) => new StorageObject.fromJson(response.jsonBody, selector: queryParams['fields']));
+  }
+
+  /**
+   * Removes the given [:object:] from the [:bucket:].
+   *
+   *  [:queryParams:] is a map of optional query parameters to pass to the method. Infomation
+   * about the valid entries in the map can be found in the [API documenation][0].
+   *
+   * Returns a [Future] which completes with `null` on success.
+   *
+   * [0]: https://developers.google.com/storage/docs/json_api/v1/objects/delete
+   */
+  Future deleteObject(String bucket, String object,
+      { Map<String,dynamic> queryParams }) {
     return new Future.sync(() {
-      var query = new _Query(projectId)
-          ..['generation'] = generation
-          ..['ifGenerationMatch'] = ifGenerationMatch
-          ..['ifGenerationNotMatch'] = ifMetagenerationMatch
-          ..['ifMetagenerationMatch'] = ifMetagenerationMatch
-          ..['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch
-          ..['projection'] = projection
-          ..['fields'] = selector;
-
+      logger.info("Deleting '$object' from '$bucket'");
       object = _urlEncode(object);
-
-      return _remoteProcedureCall(
-          "/b/$bucket/o/$object",
-          query: query,
-          handler: _handleStorageObjectResponse(selector));
+      return _remoteProcedureCall("/b/$bucket/o/$object", method: "DELETE", query: queryParams)
+          .then((_) => null);
     });
   }
 
   /**
-   * Delete the [:object:] in the [:bucket:].
+   * Update an [:object:] with safe partial request semantics.
    *
-   * If [:generation:] is provided, deletes that specific version of the object.
+   * [:queryParams:] is a map of optional query parameters to pass to the method. Information
+   * about valid entries in the map can be found in the [API documentation][0].
    *
-   * [:ifGenerationMatch:] only deletes the object if it's [:generation:]
-   * matches the provided value. If both [:ifGenerationMatch:] and [:generation:]
-   * are provided, the values must be identical for the method to return a
-   * result.
-   * [:ifGenerationNotMatch:] only deletes the object if it's [:generation:]
-   * does not match the provided value.
-   * [:ifMetagenerationMatch:] only deletes the object if it's [:metageneration:]
-   * matches the provided value
-   * [:ifMetagenerationNotMatch:] only deletes the object if its [:metageneration:]
-   * does not match the provided value.
+   * If a [:fields:] parameter is provided, it is used to specify a partial
+   * response. The [StorageObject] returned by this response is passed into the
+   * [:modify:] method and subsequently updated on the server.
+   *
+   * Only those fields selected by the [:fields:] parameter will be updated on the
+   * server. Attempting to change a value which is not selected will raise an
+   * `NotInSelectionError` when attempting to modify the value.
+   *
+   * To clear a field on the server resource, the value of the field must be
+   * explicitly set to `null`.
+   *
+   * eg. The following will update the `contentType` and clear the `contentLanguage` without
+   * fetching or modifying any other fields on the resource.
+   *
+   *      connection.patchObject(
+   *          'example-bucket', 'example-object',
+   *          (object) {
+   *            object.contentType = 'text/plain';
+   *            object.contentLanguage = null;
+   *          }
+   *          queryParams: { 'fields': 'contentType,contentLanguage' });
+   *
+   * [0]: https://developers.google.com/storage/docs/json_api/v1/objects/patch
    */
-  Future deleteObject(
-      String bucket,
-      String object,
-      { int generation,
-        int ifGenerationMatch,
-        int ifGenerationNotMatch,
-        int ifMetagenerationMatch,
-        int ifMetagenerationNotMatch
-      }) {
-    return new Future.sync(() {
-      var query = new _Query(projectId)
-          ..['generation'] = generation
-          ..['ifGenerationMatch'] = ifGenerationMatch
-          ..['ifGenerationNotMatch'] = ifGenerationNotMatch
-          ..['ifMetagenerationMatch'] = ifMetagenerationMatch
-          ..['ifMetagenerationNotMatch'] = ifMetagenerationNotMatch;
-
-      object = _urlEncode(object);
-      return _remoteProcedureCall(
-          "/b/$bucket/o/$object",
-          method: "DELETE",
-          query: query,
-          handler: _handleEmptyResponse);
-    });
-  }
-
-  /**
-   * Update an [:object:], modifying only those fields specified by [:readSelector:]
-   *
-   * Implements a *read, modify, update* loop, which ensures that only fields which are
-   * intentionally modified are updated on the server.
-   *
-   * First, the object is fetched with the [:readSelector:]. The fetched bucket is
-   * passed into the `modify` function, which can only edit the selected fields.
-   * The modified bucket is then patched onto the bucket metadata on the server.
-   * A storage bucket, with fields populated from [:resultSelector:] is returned
-   * as a partial response.
-   *
-   * If a [:resultSelector:] is not provided, defaults to the value provided for
-   * [:readSelector:]
-   *
-   * [:generation:] selects a specific version of the object to update.
-   * Default is the latest version.
-   *
-   * [:ifGenerationMatch:] only updates the object if it's [:generation:]
-   * matches the provided value. If both [:ifGenerationMatch:] and [:generation:]
-   * are provided, the values must be identical for the method to return a
-   * result.
-   * [:ifGenerationNotMatch:] only updates the object if it's [:generation:]
-   * does not match the provided value.
-   * [:ifMetagenerationMatch:] only updates the object if it's [:metageneration:]
-   * matches the provided value
-   * [:ifMetagenerationNotMatch:] only updates the object if its [:metageneration:]
-   * does not match the provided value.
-   *
-   * [:destinatinPredefinedAcl:] is a [PredefinedAcl] to apply to the object.
-   * Default is [PredefinedAcl.PRIVATE].
-   */
-  Future<StorageObject> updateObject(
+  Future<StorageObject> patchObject(
       String bucket,
       String object,
       void modify(StorageObject object),
-      { int generation,
-        int ifGenerationMatch,
-        int ifGenerationNotMatch,
-        int ifMetagenerationMatch,
-        int ifMetagenerationNotMatch,
-        PredefinedAcl predefinedAcl: PredefinedAcl.PRIVATE,
-        String projection: 'noAcl',
-        String readSelector: '*',
-        String resultSelector
-      }) {
+      { Map<String,String> queryParams: const {} }) {
     return new Future.sync(() {
       var headers = new Map()
         ..[HttpHeaders.CONTENT_TYPE] = _JSON_CONTENT;
 
-      var query = new _Query(projectId)
-          ..['generation'] = generation
-          ..['ifGenerationMatch'] = ifGenerationMatch
-          ..['ifGenerationNotMatch'] = ifGenerationNotMatch
-          ..['ifMetagenerationMatch'] = ifMetagenerationMatch
-          ..['ifMetagnerationNotMatch'] = ifMetagenerationNotMatch
-          ..['predefinedAcl'] = predefinedAcl
-          ..['projection'] = projection
-          ..['fields'] = readSelector;
-
-      resultSelector = (resultSelector != null) ? resultSelector : readSelector;
-      object = _urlEncode(object);
-
       return _readModifyPatch(
-          "/b/$bucket/o/$object", query, headers, modify,
-          readHandler: _handleStorageObjectResponse(readSelector),
-          resultSelector: resultSelector,
-          resultHandler: _handleStorageObjectResponse(resultSelector)
-      );
-
-
-
+          "/b/$bucket/o/${_urlEncode(object)}", queryParams, headers, modify,
+          readHandler: (rpcResponse) => new StorageObject.fromJson(rpcResponse.jsonBody, selector: queryParams['fields'])
+      ).then((response) => new StorageObject.fromJson(response.jsonBody, selector: queryParams['fields']));
     });
   }
 
   /**
-   * Copy the [:sourceObject:] in [:sourceBucket:]
-   * to the [:destinationObject:] in the [:destinationBucket:]
+   * Copy the [:sourceObject:] in [:sourceBucket:] to the [:destinationObject:] in the [:destinationBucket:]
    *
-   * If [:destinationObject:] is a [String], metadata values will the same as those on
-   * those in the [:sourceObject:]
+   * [:queryParams:] is a map of optional query parameters to pass to the method. Information
+   * about valid entries in the map can be found in the [API documentation][0].
    *
-   * [:ifSourceGenerationMatch:] only copies the object if it's [:generation:]
-   * matches the provided value. If both [:ifGenerationMatch:] and [:sourceGeneration:]
-   * are provided, the values must be identical for the method to return a
-   * result.
-   * [:ifSourceGenerationNotMatch:] only copies the object if it's [:generation:]
-   * does not match the provided value.
-   * [:ifSourceMetagenerationMatch:] only copies the object if it's [:metageneration:]
-   * matches the provided value
-   * [:ifSourceMetagenerationNotMatch:] only copies the object if its [:metageneration:]
-   * does not match the provided value.
-   * [:ifDestinationGenerationMatch:] only overwrites the destination object if it's [:generation:]
-   * matches the provided value.
-   * [:ifDestinationGenerationNotMatch:] only overwrites the destination object if it's [:generation:]
-   * does not match the provided value.
-   * [:ifDestinationMetagenerationMatch:] only overwrites the destination object if it's [:metageneration:]
-   * matches the provided value
-   * [:ifDestinationMetagenerationNotMatch:] only overwrites the destination object if its [:metageneration:]
-   * does not match the provided value.
-   *
-   * [:destinatinPredefinedAcl:] is a [PredefinedAcl] to apply to the object.
-   * Default is [PredefinedAcl.PRIVATE].
-   *
-   * [:projection:] must be one of:
-   * - `noAcl` No Access control details are included in the response (default)
-   * - `full` Access control details are specified on the response. The user making
-   * the request must have *OWNER* privileges for the [:bucket:].
-   *
-   * The request returns the metadata of the [StorageObject] created at [:destinationObject:]
-   * with fields selected by the given [:selector:].
+   * [0]: https://developers.google.com/storage/docs/json_api/v1/objects/copy
    */
   Future<StorageObject> copyObject(
       String sourceBucket,
       String sourceObject,
       String destinationBucket,
       var /* String | StorageObject */ destinationObject,
-      { int sourceGeneration,
-        int ifSourceGenerationMatch,
-        int ifSourceGenerationNotMatch,
-        int ifSourceMetagenerationMatch,
-        int ifSourceMetagenerationNotMatch,
-        int ifDestinationGenerationMatch,
-        int ifDestinationGenerationNotMatch,
-        int ifDestinationMetagenerationMatch,
-        int ifDestinationMetagenerationNotMatch,
-        String projection: 'noAcl',
-        PredefinedAcl destinationPredefinedAcl: PredefinedAcl.PROJECT_PRIVATE,
-        String selector: '*'
-      }) {
+      { Map<String,String> queryParams: const {} }) {
     return new Future.sync(() {
-
       if (destinationObject is String) {
-        destinationObject = new StorageObject(destinationBucket, destinationObject, selector: selector);
+        destinationObject = new StorageObject(destinationBucket, destinationObject, selector: 'bucket,name');
       } else if (destinationObject is! StorageObject) {
         throw new ArgumentError("Expected a String or StorageObject");
       }
 
       Map<String,String> headers = new Map<String,String>()
           ..[HttpHeaders.CONTENT_TYPE] = _JSON_CONTENT;
-
-      var query = new _Query(projectId)
-          ..['sourceGeneration'] = sourceGeneration
-          ..['ifSourceGenerationMatch'] = ifSourceGenerationMatch
-          ..['ifSourceGenerationNotMatch'] = ifSourceGenerationNotMatch
-          ..['ifSourceMetagenerationMatch'] = ifSourceMetagenerationMatch
-          ..['ifSourceMetagnenerationNotMatch'] = ifSourceMetagenerationNotMatch
-          ..['ifGenerationMatch'] = ifDestinationGenerationMatch
-          ..['ifGenerationNotMatch'] = ifDestinationGenerationNotMatch
-          ..['ifMetagenerationMatch'] = ifDestinationMetagenerationMatch
-          ..['ifMetagenerationNotMatch'] = ifDestinationMetagenerationNotMatch
-          ..['destinationPredefinedAcl'] = destinationPredefinedAcl
-          ..['projection'] = projection
-          ..['fields'] = selector;
 
       sourceObject = _urlEncode(sourceObject);
       var destObject = _urlEncode(destinationObject.name);
@@ -267,11 +117,10 @@ abstract class ObjectRequests implements ConnectionBase {
           "/b/$sourceBucket/o/$sourceObject/copyTo/b/$destinationBucket/o/$destObject",
           method: "POST",
           headers: headers,
-          query: query,
-          body: destinationObject,
-          handler: _handleStorageObjectResponse(selector));
+          query: queryParams,
+          body: destinationObject);
 
-    });
+    }).then((response) => new StorageObject.fromJson(response.jsonBody, selector: queryParams['fields']));
 
   }
 
@@ -283,31 +132,19 @@ abstract class ObjectRequests implements ConnectionBase {
    * the bucket, or a [CompositionSource], which provides additional controls for
    * how to specify the object to use during concatenation.
    *
-   * [:ifGenerationMatch:] only overwrites the destination object if its [:generation:]
-   * matches the provided value. If both [:ifGenerationMatch:] and [:generation:]
-   * are provided, the values must be identical for the method to return a
-   * result.
-   * [:ifMetagenerationMatch:] only overwrites the destination object if its [:metageneration:]
-   * matches the provided value.
+   * [:queryParams:] is a map of optional query parameters to pass to the method. Information
+   * about valid entries in the map can be found in the [API documentation][0].
    *
-   * [:destinationPredefinedAcl:] is a [PredefinedAcl] to apply to the destination object.
-   * Default is [PredefinedAcl.PROJECT_PRIVATE].
-   *
-   * Returns a [Future] which completes with the metadata of the destination object,
-   * selected with the given [:selector:]
+   * [0]: https://developers.google.com/storage/docs/json_api/v1/objects/copy
    */
   Future<StorageObject> composeObjects(
       String destinationBucket,
       var /* String | StorageObject */ destinationObject,
       List</* String | CompositionSource */ dynamic> sourceObjects,
-      { destinationPredefinedAcl: PredefinedAcl.PROJECT_PRIVATE,
-        ifGenerationMatch,
-        ifMetagenerationMatch,
-        String selector: '*'
-      }) {
+      { Map<String,String> queryParams: const {}}) {
     return new Future.sync(() {
       if (destinationObject is String) {
-        destinationObject = new StorageObject(destinationBucket, destinationObject, selector: selector);
+        destinationObject = new StorageObject(destinationBucket, destinationObject, selector: "bucket,name");
       } else if (destinationObject is! StorageObject) {
         throw new ArgumentError("Expected a String or StorageObject");
       }
@@ -325,12 +162,6 @@ abstract class ObjectRequests implements ConnectionBase {
       var headers = new Map()
           ..[HttpHeaders.CONTENT_TYPE] = _JSON_CONTENT;
 
-      var query = new _Query(projectId)
-          ..['destinationPredefinedAcl'] = PredefinedAcl.PRIVATE
-          ..['ifGenerationMatch'] = ifGenerationMatch
-          ..['ifMetagenerationMatch'] = ifMetagenerationMatch
-          ..['fields'] = selector;
-
       var body =
         { 'kind': 'storage#composeRequest',
           'sourceObjects': sourceObjects,
@@ -339,42 +170,29 @@ abstract class ObjectRequests implements ConnectionBase {
 
       var destObject = _urlEncode(destinationObject.name);
       return _remoteProcedureCall(
-          "/b/$destinationBucket/o/$destObject/compose",
+          "/b/$destinationBucket/o/$destObject",
           method: "POST",
           headers: headers,
-          query: query,
-          body: body,
-          handler: _handleStorageObjectResponse(selector));
-    });
+          query: queryParams,
+          body: body);
+    }).then((response) => new StorageObject.fromJson(response.jsonBody, selector: queryParams['fields']));
   }
 
 
 
   /**
    * Return a directory like listing of the given [:bucket:].
-   * [:prefix:] filters all object in the bucket whose name starts
-   * with the specified prefix.
-   * [:delimiter:] collapses all objects which match the filter and which
-   * a substring which matches the delimiter into a single result (which is
-   * emitted as a left value in the stream).
    *
-   * To list all contents of the bucket without imposing a virtual folder structure,
-   * both [:delimiter:] and [:prefix:] should be set to `null`.
+   * [:queryParams:] is a map of optional query parameters to pass to the method. Information
+   * about valid entries in the map can be found in the [API documentation][0].
    *
-   * [:selector:] is a partial result selector that is applied to
-   * right values emitted in the result stream.
+   * NOTES:
+   * - [:pageToken:] is an invalid query parameter for this method
+   * - If provided, the [:fields:] selector must be specified as a selector on the
+   * [object][1] resource.
    *
-   * If [:maxResults:] is provided and non-negative, only the given number of
-   * results is returned in result.
-   * [:projection:] must be one of:
-   * - `noAcl` No Access control details are included in the response (default)
-   * - `full` Access control details are specified on the response. The user making
-   * the request must have *OWNER* privileges for the bucket.
-   *
-   * If [:versions:] is `true`, then different versions of the same object
-   * are returned as separate right values in the stream.
-   *
-   * Returns a stream of [Either] objects where each element is
+   * If a delimiter is provided in the returned map, the result will be a
+   * [Stream] of [Either] objects, where each element is:
    * - A right value if the object's name matches `'^$prefix([$^delimiter])*\$'
    * - A left value if the object's name matches `'^$prefix([^delimiter])+.*$'`
    *  In this case, the inner value of the match will contain the object's name
@@ -406,27 +224,39 @@ abstract class ObjectRequests implements ConnectionBase {
    *       Right StorageObject (folder1/file2),
    *       Right StorageObject (folder1/file3)
    *     ]
+   *
+   * Otherwise, the [Stream] will consist entirely of right values and should
+   * be mapped to a [Stream<StorageObject>].
+   *
+   * [0]: https://developers.google.com/storage/docs/json_api/v1/objects/list
+   * [0]: https://developers.google.com/storage/docs/json_api/v1/objects
    */
-  Stream<Either<String,StorageObject>> listBucket(
+  Stream<Either<String,StorageObject>> listObjects(
       String bucket,
-      { String prefix,
-        String delimiter,
-        int maxResults: -1,
-        String projection: 'noAcl',
-        bool versions: false,
-        String selector: "*"
-      }) {
-    var fields = "nextPageToken,prefixes,items";
-    if (selector != "*") {
-      fields = fields + "($selector)";
+      { Map<String, String > queryParams: const {} }) {
+    queryParams = new Map.from(queryParams);
+    if (queryParams.containsKey('pageToken')) {
+      throw new InvalidParameterException("'pageToken' is not a valid parameter for this method");
     }
-    var query = new _Query(projectId)
-        ..['maxResults'] = (maxResults >= 0) ? maxResults : null
-        ..['projection'] = projection
-        ..['delimiter'] = delimiter
-        ..['versions'] = versions
-        ..['prefix'] = prefix
-        ..['fields'] = fields;
+
+    //The selector to use when reading the objects from the result
+    var selector = '*';
+    //The actual field selector
+    var fields = 'nextPageToken,prefixes,items';
+    if (queryParams['fields'] != null) {
+      var s = Selector.parse(queryParams['fields']);
+      if (s.isPathInSelection(new FieldPath('items')) ||
+          s.isPathInSelection(new FieldPath('prefixes'))) {
+        throw new InvalidParameterException(
+            "'fields' parameter must be a selector on the object resource, "
+            "not the page token"
+        );
+      }
+      selector = queryParams['fields'];
+      fields += '(${queryParams['fields']})';
+    }
+
+    queryParams['fields'] = fields;
 
     //Separate the current page of results into the prefixes of the folders up to
     //the next delimiter (after prefix) and the resources in the current folder
@@ -452,14 +282,8 @@ abstract class ObjectRequests implements ConnectionBase {
       return results;
     }
 
-    return _pagedRemoteProcedureCall("/b/$bucket/o", query: query)
+    return _pagedRemoteProcedureCall("/b/$bucket/o", query: queryParams)
         .expand(expandPage);
-  }
-
-  _ResponseHandler _handleStorageObjectResponse(String selector) {
-    return (_RemoteProcedureCall rpc, http.BaseResponse response) =>
-        _handleJsonResponse(rpc, response)
-        .then((result) => new StorageObject.fromJson(result, selector: selector));
   }
 
   //TODO: Object change notifications.

@@ -12,9 +12,13 @@ import 'dart:async';
 import 'dart:io';
 import 'package:google_oauth2_client/google_oauth2_console.dart' as oauth2;
 import 'package:http/http.dart' as http;
+import 'package:logging/logging.dart' as logging;
 
 import 'api/api.dart';
 import 'connection/connection.dart';
+import 'connection/rpc.dart';
+
+import "package:json_web_token/json_web_token.dart";
 
 export 'api/api.dart';
 export 'connection/connection.dart';
@@ -49,8 +53,10 @@ class CloudStorageConnection extends Connection {
     return _readPrivateKey(pathToPrivateKey).then((privateKey) {
       var scopes;
       if (serviceAccount != null && pathToPrivateKey != null) {
-        if (role == null)
+        if (role == null) {
+          logger.warning("No role provided. Defaulting to 'READER' access");
           role = PermissionRole.READER;
+        }
         scopes = [ 'https://www.googleapis.com/auth/userinfo.email',
                    API_SCOPES[role]
                  ].join(" ");
@@ -66,22 +72,26 @@ class CloudStorageConnection extends Connection {
     });
   }
 
-  CloudStorageConnection._(String projectId, http.BaseClient client):
+  CloudStorageConnection._(String projectId, _IOClient client):
     super(projectId, client);
 }
 
-class _IOClient extends http.BaseClient {
+class _IOClient extends RpcClient {
+  final oauth2.ComputeOAuth2Console console;
 
-  http.Client client = new http.Client();
-  final console;
-
-  _IOClient(this.console);
-
+  _IOClient(this.console):
+    super(new http.Client());
 
   @override
-  Future<http.StreamedResponse> send(http.BaseRequest request) {
-    return console.withClient((client) => client.send(request));
+  Future<BaseRpcRequest> authorize(BaseRpcRequest request) {
+    //FIXME: This is wrong when running on compute engine.
+    var client = new oauth2.OtherPlatformClient(console.projectId, console.privateKey, console.iss, console.scopes);
+    return new Future.value().then((_) {
+      return JWTStore.getCurrent().generateJWT(client.iss, client.scopes);
+    }).then((JWT jwt) {
+      request.headers['authorization'] = 'Bearer ${jwt.accessToken}';
+      return request;
+    });
   }
 }
-
 

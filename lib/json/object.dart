@@ -51,12 +51,12 @@ class JsonObject {
 
   final Selector _selector;
 
-  JsonObject.delegate(JsonObject delegate, var delegateField, {String selector: "*"}):
+  JsonObject.delegate(JsonObject delegate, var delegateField, {String selector}):
     this._(
         delegate,
         (delegateField is Path) ? delegateField : Path.parse(delegateField),
         null,
-        Selector.parse(selector)
+        Selector.parse(selector != null ? selector : '*')
     );
 
   JsonObject(Map<String,dynamic> json, {String selector: "*"}) :
@@ -64,15 +64,16 @@ class JsonObject {
         null,
         null,
         json,
-        Selector.parse(selector));
+        Selector.parse(selector != null ? selector : '*')
+    );
 
   JsonObject._(JsonObject delegate, Path this._relPath, Map<String,dynamic> json, Selector selector) :
     this._delegate = delegate,
     this._selector = selector,
-    this._json = json {
+    this._json = selector.select(json != null ? json : new Map()) {
     if (_delegate != null) {
       //Make sure we are in the selection
-      if (!_delegate._hasField(_relPath)) {
+      if (!_delegate._hasFieldPath(_relPath)) {
         throw new NotInSelectionError(_delegate, _relPath);
       }
       //Make sure there is an object at the path
@@ -91,7 +92,7 @@ class JsonObject {
   Map<String,dynamic> toJson() =>
       _delegate == null ?
           _selector.select(_rootJson) :
-          _selector.select(_delegate.toJson());
+          _absPath.getValue(_rootJson);
 
 
   /**
@@ -112,16 +113,18 @@ class JsonObject {
    * Check whether the field satisfies both the selector for the current field
    * and the selector for the delegate (if the object has one).
    */
-  bool _hasField(Path pathToField) {
+  bool _hasFieldPath(Path pathToField) {
     var hasField = _selector.isPathInSelection(pathToField);
     if (_isDelegate) {
-      hasField = hasField && _delegate._hasField(new Path.fromPath(pathToField, pathToRoot: _relPath));
+      hasField = hasField && _delegate._hasFieldPath(new Path.fromPath(pathToField, pathToRoot: _relPath));
     }
     return hasField;
   }
 
+  bool hasField(String name) => _hasFieldPath(new FieldPath(name));
+
   dynamic getField(String name, {dynamic defaultValue()}) {
-    if (!_hasField(new FieldPath(name)))
+    if (!_hasFieldPath(new FieldPath(name)))
       throw new NotInSelectionError(this, name);
     var value = _absolutePath(name).getValue(_rootJson);
     if (value == null && defaultValue != null) {
@@ -132,7 +135,7 @@ class JsonObject {
   }
 
   void setField(String name, dynamic value) {
-    if (!_hasField(new FieldPath(name)))
+    if (!_hasFieldPath(new FieldPath(name)))
       throw new NotInSelectionError(this, name);
     if (value is JsonObject)
       value = value.toJson();
