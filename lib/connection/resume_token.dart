@@ -30,13 +30,25 @@ class ResumeToken {
   final String selector;
 
   /**
-   * A Future which will be resolved once the upload completes (either successfully or if it fails).
+   * Completer which is fired when the upload has successfully finished.
+   * Completes with an error if the upload was somehow interrupted.
    */
-  final Future<RpcResponse> _done;
+  final Completer<StorageObject> _completer;
+
+  bool get isCompleted {
+    if (_completer == null) throw new TokenSerializationException(
+        "Deserialized token cannot be completed. "
+        "Use 'connection.resumeUpload' to obtain a new, completable token."
+    );
+    return _completer.isCompleted;
+  }
 
   Future<StorageObject> get done {
-    if (_done == null) throw new TokenSerializationException("Deserialized token cannot be completed. Use 'connection.resumeUpload' to refresh the token's future.");
-    return _done.then((RpcResponse response) => new StorageObject.fromJson(response.jsonBody, selector: selector));
+    if (_completer == null) throw new TokenSerializationException(
+        "Deserialized token cannot be completed. "
+        "Use 'connection.resumeUpload' to obtain a new, completable token."
+    );
+    return _completer.future;
   }
 
   /**
@@ -44,11 +56,12 @@ class ResumeToken {
    */
   final Uri uploadUri;
 
-  ResumeToken(this.uploadUri, {done, this.range, this.selector: '*'}): _done = done;
+  ResumeToken(this.uploadUri, {completer, this.range, this.selector: '*'})
+      : _completer = completer;
 
 
-  ResumeToken.fromToken(ResumeToken token, {done, this.range}):
-    _done = done,
+  ResumeToken.fromToken(ResumeToken token, {completer, this.range}):
+    _completer = completer,
     this.uploadUri = token.uploadUri,
     this.selector = token.selector;
 
@@ -60,7 +73,9 @@ class ResumeToken {
       throw new TokenSerializationException("No 'uploadUri'");
     if (json['done'] != null)
       throw new TokenSerializationException("Invalid resume token. 'done' attribute found.");
-    return new ResumeToken(Uri.parse(json['uploadUri']),selector: json['selector'] != null ? json['selector'] : '*',
+    return new ResumeToken(
+        Uri.parse(json['uploadUri']),
+        selector: json['selector'],
         range: (json['range'] != null) ? Range.parse(json['range']) : null);
   }
 

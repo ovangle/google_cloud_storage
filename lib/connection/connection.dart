@@ -132,11 +132,16 @@ abstract class ConnectionBase {
         Map<String,String> query,
         dynamic body
       }) {
-    var rpc = new RpcRequest(path, method: method, query: query)
-        ..headers.addAll(headers)
+    logger.info("Submitting remote procedure call to $path");
+    var rpc = new RpcRequest(path, method: method, query: query, headers: headers)
         ..jsonBody = body;
 
-    return _client.send(rpc);
+    return _client.send(rpc)
+        .then((response) {
+      if (response.statusCode < 200 || response.statusCode >= 300)
+        throw new RpcException.invalidStatus(response);
+      return response;
+    });
   }
 
   /**
@@ -211,7 +216,7 @@ abstract class ConnectionBase {
           return result;
         }
     ).then((result) {
-      return _remoteProcedureCall(path, method: "GET", query: query,
+      return _remoteProcedureCall(path, method: "PATCH", query: query,
           headers: headers,
           body: result
       );

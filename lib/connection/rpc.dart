@@ -49,13 +49,16 @@ abstract class RpcClient {
    */
   Future<RpcRequest> authorize(RpcRequest request);
 
+  Future<http.StreamedResponse> sendHttp(BaseRpcRequest request) =>
+    authorize(request)
+        .then((request) => _client.send(request.asRequest(baseUrl: baseUrl, apiVersion: apiVersion)));
 
   Future<RpcResponse> send(BaseRpcRequest rpcRequest, {bool retryRequest: true}) => _send(rpcRequest, retryRequest);
 
   Future<RpcResponse> _send(BaseRpcRequest request, bool retryRequest, [int retryCount=0]) =>
      authorize(request)
         .then((request) => _client.send(request.asRequest(baseUrl: baseUrl, apiVersion: apiVersion)))
-        .then(http.Response.fromStream)
+        .then((response) => http.Response.fromStream(response))
         .then((httpResponse) => _handleResponse(request, httpResponse, retryRequest, retryCount=retryCount));
 
   Future<RpcResponse> _handleResponse(BaseRpcRequest request, http.Response response, bool retryRequest, [int retryCount=0]) {
@@ -116,8 +119,8 @@ abstract class BaseRpcRequest {
         bool this.isUploadRequest: false,
         Map<String, String> headers
       }):
-    this.endpoint = new Either.branch(endpoint, (v) => v is Uri), this.headers = (headers != null ? headers : {}) {
-  }
+    this.endpoint = new Either.branch(endpoint, (v) => v is Uri),
+    this.headers = (headers != null ? headers : {});
 
   /**
    * Get the request url from the method.
@@ -165,7 +168,7 @@ class RpcRequest extends BaseRpcRequest {
    * Set the body of the request. The argument must be a json encodable object
    */
   set jsonBody(dynamic body) {
-    this.body = JSON.encode(body);
+    if (body != null) this.body = JSON.encode(body);
   }
 
   RpcRequest(
@@ -176,44 +179,6 @@ class RpcRequest extends BaseRpcRequest {
         Map<String, String> headers
       }):
     super(endpoint, method: method, query: query, isUploadRequest: isUploadRequest, headers: headers);
-
-  factory RpcRequest.fromJson(Map<String,dynamic> json) {
-
-    if (json['endpoint'] == null || json['endpoint'] is! Map)
-      throw new ArgumentError("No 'endpoint' in json");
-    var endpoint = json['endpoint'];
-
-    var lvalue = endpoint['left'], rvalue=endpoint['right'];
-
-    if (lvalue == null && rvalue == null)
-      throw new ArgumentError("Invalid 'endpoint' in json");
-    if (lvalue != null && rvalue != null)
-      throw new ArgumentError("Invalid 'endpoint' in json");
-    if (lvalue != null) {
-      endpoint = lvalue;
-    }
-    if (rvalue != null) {
-      endpoint = Uri.parse(rvalue);
-    }
-
-
-    json.putIfAbsent('method', () => 'GET');
-    json.putIfAbsent('query', () => {});
-    json.putIfAbsent('isUploadRequest', () => false);
-    var req = new RpcRequest(
-        endpoint,
-        method: json['method'],
-        query: json['query'],
-        isUploadRequest: json['isUploadRequest']
-    );
-    if (json['headers'] is Map) {
-      json['headers'].forEach((k,v) => req.headers[k] = v);
-    }
-    if (json['body'] is String) {
-      req.body = json['body'];
-    }
-    return req;
-  }
 
   @override
   http.Request asRequest({String baseUrl: BASE_URL, String apiVersion: API_VERSION}) {
@@ -226,15 +191,6 @@ class RpcRequest extends BaseRpcRequest {
 
     return req;
   }
-
-  toJson() =>
-      { 'endpoint': endpoint.toJson(),
-        'method': method,
-        'query': query,
-        'headers': headers,
-        'body': body,
-        'isUploadRequest': isUploadRequest
-      };
 }
 
 class StreamedRpcRequest extends BaseRpcRequest {
@@ -262,6 +218,7 @@ class StreamedRpcRequest extends BaseRpcRequest {
     req.headers.addAll(headers);
     //Pipe all bytes from the stream sink into the request.
     _controller.stream.pipe(req.sink as StreamSink);
+    print(req.headers);
     return req;
   }
 
@@ -274,12 +231,12 @@ class StreamedRpcRequest extends BaseRpcRequest {
    * Add bytes from [Source] to the request, beginning at [:start:].
    */
   Future addSource(Source source, [int start=0]) {
-    return new Future.sync(() {
+    return new Future.value().then((_) {
       if (start >= source.length)
         return sink.close();
 
       source.setPosition(start);
-      var readLen = math.min(start + _BUFFER_SIZE, source.length);
+      var readLen = math.min(start + _BUFFER_SIZE, source.length) - start;
       return source.read(readLen).then((bytes) {
         sink.add(bytes);
         return addSource(source, start + _BUFFER_SIZE);

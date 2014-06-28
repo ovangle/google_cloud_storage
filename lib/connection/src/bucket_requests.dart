@@ -15,7 +15,7 @@ abstract class BucketRequests implements ConnectionBase {
    * [0]: https://developers.google.com/storage/docs/json_api/v1/buckets/get
    */
   Future<StorageBucket> getBucket(String name, { Map<String,String> queryParams: const {} }) {
-      return _remoteProcedureCall("/b/$name",query: queryParams)
+      return _remoteProcedureCall("/b/$name", query: queryParams)
           .then((rpcResponse) => new StorageBucket.fromJson(rpcResponse.jsonBody, selector: queryParams['fields']));
   }
 
