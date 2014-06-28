@@ -9,20 +9,20 @@ abstract class BucketRequests implements ConnectionBase {
   /**
    * Get the bucket with the specified [:name:], with selection [:selector:]
    *
-   * [:queryParams:] is a map of optional query parameters to pass to the method. Infomation
+   * [:params:] is a map of optional query parameters to pass to the method. Infomation
    * about the valid entries in the map can be found in the [API documenation][0].
    *
    * [0]: https://developers.google.com/storage/docs/json_api/v1/buckets/get
    */
-  Future<StorageBucket> getBucket(String name, { Map<String,String> queryParams: const {} }) {
-      return _remoteProcedureCall("/b/$name", query: queryParams)
-          .then((rpcResponse) => new StorageBucket.fromJson(rpcResponse.jsonBody, selector: queryParams['fields']));
+  Future<StorageBucket> getBucket(String name, { Map<String,String> params: const {} }) {
+      return _remoteProcedureCall("/b/$name", query: params)
+          .then((rpcResponse) => new StorageBucket.fromJson(rpcResponse.jsonBody, selector: params['fields']));
   }
 
   /**
    * List all buckets associated with the current project.
    *
-   * [:queryParams:] is a map of optional query parameters to pass to the method. Infomation
+   * [:params:] is a map of optional query parameters to pass to the method. Infomation
    * about the valid entries in the map can be found in the [API documenation][0].
    *
    * NOTE:
@@ -35,11 +35,11 @@ abstract class BucketRequests implements ConnectionBase {
    * [0]: https://developers.google.com/storage/docs/json_api/v1/buckets/list
    * [1]: https://developers.google.com/storage/docs/json_api/v1/buckets
    */
-  Stream<StorageBucket> listBuckets({ Map<String,String> queryParams: const {}}) {
+  Stream<StorageBucket> listBuckets({ Map<String,String> params: const {}}) {
 
-    queryParams = new Map.from(queryParams);
+    params = new Map.from(params);
 
-    if (queryParams.containsKey('pageToken')) {
+    if (params.containsKey('pageToken')) {
       throw new InvalidParameterException('\'pageToken\' is not a valid parameter for this method');
     }
 
@@ -47,21 +47,21 @@ abstract class BucketRequests implements ConnectionBase {
     var selector = '*';
     //The fiels parameter for the response.
     var fields = "nextPageToken,items";
-    if (queryParams['fields'] != null) {
-      var s = Selector.parse(queryParams['fields']);
+    if (params['fields'] != null) {
+      var s = Selector.parse(params['fields']);
       if (s.isPathInSelection(new FieldPath('items'))) {
         throw new InvalidParameterException(
             "'fields' must be a selector on the bucket resource, "
             "not the page response");
       }
 
-      selector = queryParams['fields'];
-      fields += "(${queryParams['fields']})";
+      selector = params['fields'];
+      fields += "(${params['fields']})";
     }
-    queryParams['fields'] = fields;
+    params['fields'] = fields;
 
     logger.info("listing buckets in project");
-    return _pagedRemoteProcedureCall("/b", query:queryParams)
+    return _pagedRemoteProcedureCall("/b", query:params)
         .expand((page) =>
             page['items']
             .map((item) => new StorageBucket.fromJson(item, selector: selector))
@@ -75,7 +75,7 @@ abstract class BucketRequests implements ConnectionBase {
    * bucket will be created with server default values. Otherwise, properties
    * will be overriden with the values from the provided bucket.
    *
-   * [:queryParams:] is a map of optional query parameters to pass to the method. Information
+   * [:params:] is a map of optional query parameters to pass to the method. Information
    * about valid entries in the map can be found in the [API documentation][0].
    *
    * NOTE:
@@ -87,7 +87,7 @@ abstract class BucketRequests implements ConnectionBase {
    */
   Future<StorageBucket> createBucket(
       /* String | StorageBucket */ bucket,
-      { Map<String,String> queryParams: const {} }) {
+      { Map<String,String> params: const {} }) {
     return new Future.sync(() {
       if (bucket is String) {
         bucket = new StorageBucket(bucket, selector: 'name');
@@ -106,27 +106,27 @@ abstract class BucketRequests implements ConnectionBase {
       return _remoteProcedureCall(
           "/b",
           method: "POST",
-          query: queryParams,
+          query: params,
           headers: headers,
           body: bucket);
-    }).then((response) => new StorageBucket.fromJson(response.jsonBody, selector: queryParams['fields']));
+    }).then((response) => new StorageBucket.fromJson(response.jsonBody, selector: params['fields']));
   }
 
   /**
    * Deletes an empty storage bucket. Returns a future which completes with `null`
    * when the delete is done
    *
-   * [:queryParams:] is a map of optional query parameters to pass to the method. Information
+   * [:params:] is a map of optional query parameters to pass to the method. Information
    * about valid entries in the map can be found in the [API documentation][0].
    *
    * Returns a [Future] which completes with `null` on success.
    *
    * [0]: https://developers.google.com/storage/docs/json_api/v1/buckets/delete
    */
-  Future deleteBucket(String bucket, { Map<String,dynamic> queryParams }) {
+  Future deleteBucket(String bucket, { Map<String,dynamic> params }) {
     return new Future.sync(() {
       logger.info("deleting bucket ${bucket}");
-      return _remoteProcedureCall("/b/$bucket", method: "DELETE", query: queryParams)
+      return _remoteProcedureCall("/b/$bucket", method: "DELETE", query: params)
           .then((_) => null);
     });
   }
@@ -134,7 +134,7 @@ abstract class BucketRequests implements ConnectionBase {
   /**
    * Update a bucket on the server, using `HTTP PUT` semantics.
    *
-   *  [:queryParams:] is a map of optional query parameters to pass to the method. Information
+   *  [:params:] is a map of optional query parameters to pass to the method. Information
    * about valid entries in the map can be found in the [API documentation][0].
    *
    * NOTES:
@@ -151,20 +151,20 @@ abstract class BucketRequests implements ConnectionBase {
    */
   Future<StorageBucket> updateBucket(
       StorageBucket bucket,
-      { Map<String,String> queryParams: const {} }) {
+      { Map<String,String> params: const {} }) {
     return new Future.sync(() {
-      queryParams = new Map.from(queryParams);
+      params = new Map.from(params);
 
       if (bucket.selector != '*') {
-        if (queryParams['fields'] != null && queryParams['fields'] != bucket.selector) {
+        if (params['fields'] != null && params['fields'] != bucket.selector) {
           throw new InvalidParameterException('Incompatible selectors');
         }
       }
 
-      if (queryParams['fields'] != null) {
-        bucket = new StorageBucket.fromJson(bucket.toJson(), selector: queryParams['fields']);
+      if (params['fields'] != null) {
+        bucket = new StorageBucket.fromJson(bucket.toJson(), selector: params['fields']);
       } else {
-        queryParams['fields'] = bucket.selector;
+        params['fields'] = bucket.selector;
       }
 
       var headers = new Map<String,String>()
@@ -176,7 +176,7 @@ abstract class BucketRequests implements ConnectionBase {
           headers: headers,
           body: bucket
       )
-      .then((response) => new StorageBucket.fromJson(response.jsonBody, selector: queryParams['fields']));
+      .then((response) => new StorageBucket.fromJson(response.jsonBody, selector: params['fields']));
 
     });
   }
@@ -184,7 +184,7 @@ abstract class BucketRequests implements ConnectionBase {
   /**
    * Update an [:object:] with safe partial request semantics.
    *
-   * [:queryParams:] is a map of optional query parameters to pass to the method. Information
+   * [:params:] is a map of optional query parameters to pass to the method. Information
    * about valid entries in the map can be found in the [API documentation][0].
    *
    * If a [:fields:] parameter is provided, it is used to specify a partial
@@ -214,7 +214,7 @@ abstract class BucketRequests implements ConnectionBase {
   Future<StorageBucket> patchBucket(
       String bucket,
       void modify(StorageBucket bucket),
-      { Map<String,String> queryParams: const {} }) {
+      { Map<String,String> params: const {} }) {
     return new Future.sync(() {
       var headers = new Map()
           ..[HttpHeaders.CONTENT_TYPE] = _JSON_CONTENT;
@@ -222,10 +222,10 @@ abstract class BucketRequests implements ConnectionBase {
       logger.info("Patching bucket ${bucket}");
 
       return _readModifyPatch(
-          "/b/$bucket", queryParams, headers, modify,
-          readHandler: (rpcResponse) => new StorageBucket.fromJson(rpcResponse.jsonBody, selector: queryParams['fields'])
+          "/b/$bucket", params, headers, modify,
+          readHandler: (rpcResponse) => new StorageBucket.fromJson(rpcResponse.jsonBody, selector: params['fields'])
       )
-      .then((rpcResponse) => new StorageBucket.fromJson(rpcResponse.jsonBody, selector: queryParams['fields']));
+      .then((rpcResponse) => new StorageBucket.fromJson(rpcResponse.jsonBody, selector: params['fields']));
     });
   }
 }
