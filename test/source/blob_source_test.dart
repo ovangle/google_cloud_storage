@@ -14,7 +14,7 @@ import '../../lib/source/source_client.dart';
 
 
 void main() {
-  var source = new BlobSource(new MockBlob("hello"))
+  var source = new BlobSource(new MockBlob("hello"), 'text/plain')
       ..reader = new MockFileReader();
 
   group("blob source", () {
