@@ -70,7 +70,7 @@ class JsonObject {
   JsonObject._(JsonObject delegate, Path this._relPath, Map<String,dynamic> json, Selector selector) :
     this._delegate = delegate,
     this._selector = selector,
-    this._json = selector.select(json) {
+    this._json = selector.select(json != null ? json : new Map()) {
     if (_delegate != null) {
       //Make sure we are in the selection
       if (!_delegate._hasFieldPath(_relPath)) {
