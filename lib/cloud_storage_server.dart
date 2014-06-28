@@ -12,6 +12,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:google_oauth2_client/google_oauth2_console.dart' as oauth2;
 import 'package:http/http.dart' as http;
+import 'package:logging/logging.dart' as logging;
 
 import 'api/api.dart';
 import 'connection/connection.dart';
@@ -52,8 +53,10 @@ class CloudStorageConnection extends Connection {
     return _readPrivateKey(pathToPrivateKey).then((privateKey) {
       var scopes;
       if (serviceAccount != null && pathToPrivateKey != null) {
-        if (role == null)
+        if (role == null) {
+          logger.warning("No role provided. Defaulting to 'READER' access");
           role = PermissionRole.READER;
+        }
         scopes = [ 'https://www.googleapis.com/auth/userinfo.email',
                    API_SCOPES[role]
                  ].join(" ");
@@ -79,7 +82,6 @@ class _IOClient extends RpcClient {
   _IOClient(this.console):
     super(new http.Client());
 
-
   @override
   Future<BaseRpcRequest> authorize(BaseRpcRequest request) {
     //FIXME: This is wrong when running on compute engine.
@@ -87,8 +89,8 @@ class _IOClient extends RpcClient {
     return new Future.value().then((_) {
       return JWTStore.getCurrent().generateJWT(client.iss, client.scopes);
     }).then((JWT jwt) {
-      return request
-          ..headers['authorization'] = 'Bearer ${jwt.accessToken}';
+      request.headers['authorization'] = 'Bearer ${jwt.accessToken}';
+      return request;
     });
   }
 }
