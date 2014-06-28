@@ -9,21 +9,21 @@ abstract class ObjectRequests implements ConnectionBase {
   /**
    * Get the [:object:] from the given [:bucket:].
    *
-   * [:queryParams:] is a map of optional query parameters to pass to the method. Infomation
+   * [:params:] is a map of optional query parameters to pass to the method. Infomation
    * about the valid entries in the map can be found in the [API documenation][0].
    *
    * [0]: https://developers.google.com/storage/docs/json_api/v1/objects/get
    */
   Future<StorageObject> getObject(String bucket, String object,
-      { Map<String,String> queryParams: const {} }) {
-    return _remoteProcedureCall("/b/$bucket/o/${_urlEncode(object)}", query: queryParams)
-        .then((response) => new StorageObject.fromJson(response.jsonBody, selector: queryParams['fields']));
+      { Map<String,String> params: const {} }) {
+    return _remoteProcedureCall("/b/$bucket/o/${_urlEncode(object)}", query: params)
+        .then((response) => new StorageObject.fromJson(response.jsonBody, selector: params['fields']));
   }
 
   /**
    * Removes the given [:object:] from the [:bucket:].
    *
-   *  [:queryParams:] is a map of optional query parameters to pass to the method. Infomation
+   *  [:params:] is a map of optional query parameters to pass to the method. Infomation
    * about the valid entries in the map can be found in the [API documenation][0].
    *
    * Returns a [Future] which completes with `null` on success.
@@ -31,11 +31,11 @@ abstract class ObjectRequests implements ConnectionBase {
    * [0]: https://developers.google.com/storage/docs/json_api/v1/objects/delete
    */
   Future deleteObject(String bucket, String object,
-      { Map<String,dynamic> queryParams }) {
+      { Map<String,dynamic> params }) {
     return new Future.sync(() {
       logger.info("Deleting '$object' from '$bucket'");
       object = _urlEncode(object);
-      return _remoteProcedureCall("/b/$bucket/o/$object", method: "DELETE", query: queryParams)
+      return _remoteProcedureCall("/b/$bucket/o/$object", method: "DELETE", query: params)
           .then((_) => null);
     });
   }
@@ -43,7 +43,7 @@ abstract class ObjectRequests implements ConnectionBase {
   /**
    * Update an [:object:] with safe partial request semantics.
    *
-   * [:queryParams:] is a map of optional query parameters to pass to the method. Information
+   * [:params:] is a map of optional query parameters to pass to the method. Information
    * about valid entries in the map can be found in the [API documentation][0].
    *
    * If a [:fields:] parameter is provided, it is used to specify a partial
@@ -66,7 +66,7 @@ abstract class ObjectRequests implements ConnectionBase {
    *            object.contentType = 'text/plain';
    *            object.contentLanguage = null;
    *          }
-   *          queryParams: { 'fields': 'contentType,contentLanguage' });
+   *          params: { 'fields': 'contentType,contentLanguage' });
    *
    * [0]: https://developers.google.com/storage/docs/json_api/v1/objects/patch
    */
@@ -74,22 +74,22 @@ abstract class ObjectRequests implements ConnectionBase {
       String bucket,
       String object,
       void modify(StorageObject object),
-      { Map<String,String> queryParams: const {} }) {
+      { Map<String,String> params: const {} }) {
     return new Future.sync(() {
       var headers = new Map()
         ..[HttpHeaders.CONTENT_TYPE] = _JSON_CONTENT;
 
       return _readModifyPatch(
-          "/b/$bucket/o/${_urlEncode(object)}", queryParams, headers, modify,
-          readHandler: (rpcResponse) => new StorageObject.fromJson(rpcResponse.jsonBody, selector: queryParams['fields'])
-      ).then((response) => new StorageObject.fromJson(response.jsonBody, selector: queryParams['fields']));
+          "/b/$bucket/o/${_urlEncode(object)}", params, headers, modify,
+          readHandler: (rpcResponse) => new StorageObject.fromJson(rpcResponse.jsonBody, selector: params['fields'])
+      ).then((response) => new StorageObject.fromJson(response.jsonBody, selector: params['fields']));
     });
   }
 
   /**
    * Copy the [:sourceObject:] in [:sourceBucket:] to the [:destinationObject:] in the [:destinationBucket:]
    *
-   * [:queryParams:] is a map of optional query parameters to pass to the method. Information
+   * [:params:] is a map of optional query parameters to pass to the method. Information
    * about valid entries in the map can be found in the [API documentation][0].
    *
    * [0]: https://developers.google.com/storage/docs/json_api/v1/objects/copy
@@ -99,7 +99,7 @@ abstract class ObjectRequests implements ConnectionBase {
       String sourceObject,
       String destinationBucket,
       var /* String | StorageObject */ destinationObject,
-      { Map<String,String> queryParams: const {} }) {
+      { Map<String,String> params: const {} }) {
     return new Future.sync(() {
       if (destinationObject is String) {
         destinationObject = new StorageObject(destinationBucket, destinationObject, selector: 'bucket,name');
@@ -117,10 +117,10 @@ abstract class ObjectRequests implements ConnectionBase {
           "/b/$sourceBucket/o/$sourceObject/copyTo/b/$destinationBucket/o/$destObject",
           method: "POST",
           headers: headers,
-          query: queryParams,
+          query: params,
           body: destinationObject);
 
-    }).then((response) => new StorageObject.fromJson(response.jsonBody, selector: queryParams['fields']));
+    }).then((response) => new StorageObject.fromJson(response.jsonBody, selector: params['fields']));
 
   }
 
@@ -132,7 +132,7 @@ abstract class ObjectRequests implements ConnectionBase {
    * the bucket, or a [CompositionSource], which provides additional controls for
    * how to specify the object to use during concatenation.
    *
-   * [:queryParams:] is a map of optional query parameters to pass to the method. Information
+   * [:params:] is a map of optional query parameters to pass to the method. Information
    * about valid entries in the map can be found in the [API documentation][0].
    *
    * [0]: https://developers.google.com/storage/docs/json_api/v1/objects/copy
@@ -141,7 +141,7 @@ abstract class ObjectRequests implements ConnectionBase {
       String destinationBucket,
       var /* String | StorageObject */ destinationObject,
       List</* String | CompositionSource */ dynamic> sourceObjects,
-      { Map<String,String> queryParams: const {}}) {
+      { Map<String,String> params: const {}}) {
     return new Future.sync(() {
       if (destinationObject is String) {
         destinationObject = new StorageObject(destinationBucket, destinationObject, selector: "bucket,name");
@@ -173,9 +173,9 @@ abstract class ObjectRequests implements ConnectionBase {
           "/b/$destinationBucket/o/$destObject",
           method: "POST",
           headers: headers,
-          query: queryParams,
+          query: params,
           body: body);
-    }).then((response) => new StorageObject.fromJson(response.jsonBody, selector: queryParams['fields']));
+    }).then((response) => new StorageObject.fromJson(response.jsonBody, selector: params['fields']));
   }
 
 
@@ -183,7 +183,7 @@ abstract class ObjectRequests implements ConnectionBase {
   /**
    * Return a directory like listing of the given [:bucket:].
    *
-   * [:queryParams:] is a map of optional query parameters to pass to the method. Information
+   * [:params:] is a map of optional query parameters to pass to the method. Information
    * about valid entries in the map can be found in the [API documentation][0].
    *
    * NOTES:
@@ -233,9 +233,9 @@ abstract class ObjectRequests implements ConnectionBase {
    */
   Stream<Either<String,StorageObject>> listObjects(
       String bucket,
-      { Map<String, String > queryParams: const {} }) {
-    queryParams = new Map.from(queryParams);
-    if (queryParams.containsKey('pageToken')) {
+      { Map<String, String > params: const {} }) {
+    params = new Map.from(params);
+    if (params.containsKey('pageToken')) {
       throw new InvalidParameterException("'pageToken' is not a valid parameter for this method");
     }
 
@@ -243,8 +243,8 @@ abstract class ObjectRequests implements ConnectionBase {
     var selector = '*';
     //The actual field selector
     var fields = 'nextPageToken,prefixes,items';
-    if (queryParams['fields'] != null) {
-      var s = Selector.parse(queryParams['fields']);
+    if (params['fields'] != null) {
+      var s = Selector.parse(params['fields']);
       if (s.isPathInSelection(new FieldPath('items')) ||
           s.isPathInSelection(new FieldPath('prefixes'))) {
         throw new InvalidParameterException(
@@ -252,11 +252,11 @@ abstract class ObjectRequests implements ConnectionBase {
             "not the page token"
         );
       }
-      selector = queryParams['fields'];
-      fields += '(${queryParams['fields']})';
+      selector = params['fields'];
+      fields += '(${params['fields']})';
     }
 
-    queryParams['fields'] = fields;
+    params['fields'] = fields;
 
     //Separate the current page of results into the prefixes of the folders up to
     //the next delimiter (after prefix) and the resources in the current folder
@@ -282,7 +282,7 @@ abstract class ObjectRequests implements ConnectionBase {
       return results;
     }
 
-    return _pagedRemoteProcedureCall("/b/$bucket/o", query: queryParams)
+    return _pagedRemoteProcedureCall("/b/$bucket/o", query: params)
         .expand(expandPage);
   }
 

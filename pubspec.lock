@@ -4,7 +4,7 @@ packages:
   asn1lib:
     description: asn1lib
     source: hosted
-    version: "0.3.0"
+    version: "0.3.2"
   bignum:
     description: bignum
     source: hosted
@@ -52,7 +52,7 @@ packages:
   matcher:
     description: matcher
     source: hosted
-    version: "0.10.0+2"
+    version: "0.10.1+1"
   mock:
     description: mock
     source: hosted
@@ -76,16 +76,16 @@ packages:
   source_maps:
     description: source_maps
     source: hosted
-    version: "0.9.1"
+    version: "0.9.2+3"
   stack_trace:
     description: stack_trace
     source: hosted
-    version: "1.0.0"
+    version: "1.0.2"
   string_scanner:
     description: string_scanner
     source: hosted
-    version: "0.0.2"
+    version: "0.0.3"
   unittest:
     description: unittest
     source: hosted
-    version: "0.11.0+1"
+    version: "0.11.0+2"

@@ -9,16 +9,16 @@ const int _BUFFER_SIZE = 5 * 1024 * 1024;
 
 abstract class ObjectTransferRequests implements ObjectRequests {
 
-  Stream<List<int>> downloadObject(String bucket, String object, { Map<String, String> queryParams: const {} }) {
+  Stream<List<int>> downloadObject(String bucket, String object, { Map<String, String> params: const {} }) {
 
     object = _urlEncode(object);
     StreamController controller = new StreamController<List<int>>();
 
-    queryParams = new Map.from(queryParams);
-    queryParams.putIfAbsent('alt', () => 'media');
+    params = new Map.from(params);
+    params.putIfAbsent('alt', () => 'media');
 
     var uploadRpc = new RpcRequest("/b/$bucket/o/$object", headers: { HttpHeaders.RANGE: range.toString() },
-        query: queryParams);
+        query: params);
 
     _client.sendHttp(uploadRpc).then((http.StreamedResponse response) {
       return controller.addStream(response.stream);
@@ -41,7 +41,7 @@ abstract class ObjectTransferRequests implements ObjectRequests {
    * [:source:] is a readable, searchable instance which contains the object
    * data. See [Source] for more information.
    *
-   * [:queryParams:] is a map of optional query parameters to pass to the method. Infomation
+   * [:params:] is a map of optional query parameters to pass to the method. Infomation
    * about the valid entries in the map can be found in the [API documenation][0].
    *
    * Returns a [Future] that completes with [ResumeToken]. This resume token can be passed directly into
@@ -53,7 +53,7 @@ abstract class ObjectTransferRequests implements ObjectRequests {
       String bucket,
       var /* String | StorageObject */ object,
       Source source,
-      { Map<String, String> queryParams: const {} }) {
+      { Map<String, String> params: const {} }) {
     return new Future.sync(() {
 
       if (object is String) {
@@ -68,13 +68,13 @@ abstract class ObjectTransferRequests implements ObjectRequests {
           ..['Content-Type'] = 'application/json; charset=utf-8';
 
       //Set the upload type to 'resumable'
-      queryParams = new Map.from(queryParams);
-      queryParams['uploadType'] = 'resumable';
+      params = new Map.from(params);
+      params['uploadType'] = 'resumable';
 
       var uploadRpc = new RpcRequest(
           "/b/$bucket/o",
           method: "POST",
-          query: queryParams,
+          query: params,
           isUploadRequest: true);
 
       uploadRpc.headers.addAll(headers);
@@ -92,7 +92,7 @@ abstract class ObjectTransferRequests implements ObjectRequests {
 
         var initToken = new ResumeToken(
             Uri.parse(location),
-            selector: queryParams['fields']
+            selector: params['fields']
         );
         return _sendUploadRequest(initToken, source);
       });
