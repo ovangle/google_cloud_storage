@@ -8,74 +8,86 @@ abstract class RemoteEntry {
   final CloudFilesystem filesystem;
   final String path;
 
-  Map<String,String> _cachedMetadata;
-
+  /**
+   * Create a new entry from the filesystem and path.
+   * If [:path:] ends with '/', a folder will be created
+   * otherwise a file
+   */
   factory RemoteEntry(CloudFilesystem filesystem, String path) {
-    if (_isFolderPath(path)) {
-      return new RemoteFolder(filesystem, path);
-    }
-    return new RemoteFile(filesystem, path);
+    return (RemoteFolder.FOLDER_PATH.matchAsPrefix(path) != null)
+        ? new RemoteFolder(filesystem, path)
+        : new RemoteFile(filesystem, path);
   }
 
-  RemoteEntry._(this.filesystem, this.path):
-    this._cachedMetadata = {};
+  factory RemoteEntry.fromParentAndName(RemoteFolder parent, String name) {
+    return new RemoteEntry(parent.filesystem, parent.path + name);
+  }
 
-  static final _FOLDER_REGEXP = new RegExp(r'/.');
+  RemoteEntry._(this.filesystem, this.path);
+
   /**
    * The folder that contains the current entry.
    */
-  RemoteFolder get parent =>
-      new RemoteFolder(filesystem, path.substring(0, path.lastIndexOf(_FOLDER_REGEXP)));
+  RemoteFolder get parent;
+
+  /**
+   * The name of the entry within the parent folder
+   */
+  String get name => path.substring(parent.path.length);
 
   Future<bool> exists() {
     if (path == _FS_DELIMITER) return new Future.value(true);
     return filesystem.connection.getObject(
         filesystem.bucket,
         path,
-        selector: "name")
+        params: {'fields':'name'})
     .then((result) => true)
     .catchError(
         (err) => false,
         test: (err) =>
-            err is RPCException &&
+            err is RpcException &&
             err.statusCode == HttpStatus.NOT_FOUND
     );
   }
 
+  /**
+   * An entry property is a string value stored in the metadata of the
+   * file storage metadata.
+   *
+   * If `orElse` is not null and the value wasn't found in the metadata
+   * of the associated entry, the value will be returned.
+   */
+  Future<String> getEntryProperty(String key, {orElse()}) =>
+      filesystem.connection.getObject(
+         filesystem.bucket,
+         path,
+         params: {'fields': 'metadata($key)'})
+      .then((object) {
+        if (object.metadata != null && object.metadata.containsKey(key))
+          return object.metadata[key];
+        return orElse != null ? orElse() : null;
+      });
+
+
   Future setEntryProperty(String key, String value) {
-    return filesystem.connection.updateObject(
+    return filesystem.connection.patchObject(
         filesystem.bucket,
         path,
         (object) => object.metadata[key] = value,
-        readSelector: "metadata",
-        resultSelector: "metadata"
-    ).then((obj) => _cachedMetadata = obj.metadata);
-  }
-
-  Future<String> getEntryProperty(String key) {
-    if (_cachedMetadata.containsKey(key))
-      return new Future.value(_cachedMetadata[key]);
-    return filesystem.connection.getObject(
-        filesystem.bucket,
-        path,
-        selector: "metadata").then((object) {
-      _cachedMetadata = object.metadata;
-      return _cachedMetadata[key];
-    });
+        params: {'fields': 'metadata'}
+    );
   }
 
   /**
    * Get the google cloud storage metadata associated with the current
    * [RemoteEntry].
    *
-   * The metadata of '/' is always `null`.
+   * Note: The metadata of the root of the filesystem is always `null`.
    */
   Future<StorageObject> metadata() =>
       path == _FS_DELIMITER
           ? new Future.value()
           : filesystem.connection.getObject(filesystem.bucket, path);
-
-
 
   /**
    * Delete the [RemoteEntry].
@@ -86,27 +98,45 @@ abstract class RemoteEntry {
   int get hashCode => path.hashCode * 7;
 }
 
+
+/// A virtual folder in the filesystem. A folder path must match the regular
+/// expression (/[^\s/]+)*/
 class RemoteFolder extends RemoteEntry {
+  static final RegExp FOLDER_PATH = new RegExp(r'^(/[^\s/]+)*/$');
+
 
   RemoteFolder(filesystem, String path):
     super._(filesystem, path) {
-    _checkValidFolderPath(path);
+    if (FOLDER_PATH.matchAsPrefix(path) == null) {
+      throw new PathError.invalidFolder(path);
+    }
+  }
+
+  RemoteFolder.fromParentAndName(RemoteFolder parent, String name):
+    this(parent.filesystem, parent.path + name);
+
+  RemoteFolder get parent {
+    if (path == _FS_DELIMITER) {
+      return this;
+    }
+    return new RemoteFolder(
+        filesystem,
+        path.substring(0, path.lastIndexOf(_FS_DELIMITER, path.length - 2) + 1)
+    );
   }
 
   /**
    * List all the [RemoteEntry]s in the current folder.
    */
   Stream<RemoteEntry> list() {
-    return filesystem.connection.listBucket(
+    return filesystem.connection.listObjects(
         filesystem.bucket,
-        prefix: (this.path == _FS_DELIMITER ? "" : this.path),
-        delimiter: _FS_DELIMITER,
-        selector: "name"
+        params: {'prefix': path, 'delimiter': _FS_DELIMITER }
     )
     .map((prefixOrObject) =>
         prefixOrObject.fold(
             ifLeft: (prefix) => new RemoteFolder(filesystem, prefix),
-            ifRight: (obj) => new RemoteFile(filesystem, obj.path)
+            ifRight: (obj) => new RemoteEntry(filesystem, obj.name)
         )
     )
     .where((obj) => obj != this);
@@ -123,18 +153,28 @@ class RemoteFolder extends RemoteEntry {
    * if the parent does not exist.
    */
   Future<RemoteFolder> create({recursive: false}) {
-    return exists().then((result) {
-      if (result) {
+    return exists().then((exists) {
+      if (exists) {
         return this;
       } else {
-        return parent.exists().then((result) {
-          if (!result) {
-            if (recursive) return parent.create(recursive: true);
+        return parent.exists().then((parentExists) {
+          if (!parentExists) {
+            if (recursive)
+              return parent.create(recursive: true);
             throw new FilesystemError.noSuchFolderOrFile(parent.path);
           }
         })
-        .then((_) => filesystem.connection.uploadObject(filesystem.bucket, path, 'text/plain', new ByteSource([]), selector: "name"))
-        .then((obj) => new RemoteFolder(filesystem, obj.name));
+        .then((_) {
+          var source = new ByteSource([], 'text/plain');
+
+          return filesystem.connection
+              .uploadObject(
+                  filesystem.bucket,
+                  path,
+                  source,
+                  params: {'fields': 'name'}
+              );
+        }).then((resumeToken) => resumeToken.done);
       }
     });
   }
@@ -166,16 +206,30 @@ class RemoteFolder extends RemoteEntry {
   String toString() => "Folder: $path";
 }
 
+/**
+ * A file in the filesystem. File paths must match the pattern `(/[^\s/]+)+`
+ */
 class RemoteFile extends RemoteEntry {
+  static final RegExp FILE_PATH = new RegExp(r'(/[^\s/]+)+$');
 
 
   RemoteFile(filesystem, path):
       super._(filesystem, path)  {
-    _checkValidFilePath(path);
+    if (FILE_PATH.matchAsPrefix(path) == null)
+      throw new PathError.invalidFile(path);
   }
+
+  RemoteFile.fromParentAndName(RemoteFolder parent, String name):
+    this(parent.filesystem, parent.path + name);
 
   RemoteFile._from(RemoteFile file):
     super._(file.filesystem, file.path);
+
+  RemoteFolder get parent =>
+      new RemoteFolder(
+          filesystem,
+          path.substring(0, path.lastIndexOf(_FS_DELIMITER) + 1)
+      );
 
 
   /**
@@ -185,14 +239,13 @@ class RemoteFile extends RemoteEntry {
    * The file content is read from the given [Source].
    * [:contentType:] is the mime type of the source.
    */
-  Future<RemoteFile> write(Source source, String contentType) {
+  Future<RemoteFile> write(Source source) {
     return filesystem.connection.uploadObject(
         filesystem.bucket,
         path,
-        contentType,
         source,
-        selector: "name"
-    ).then((obj) => new RemoteFile(filesystem, obj.name));
+        params: {'fields': 'name'}
+    ).then((resumeToken) => this);
   }
 
   /**
@@ -213,7 +266,7 @@ class RemoteFile extends RemoteEntry {
     return filesystem.connection.downloadObject(
         filesystem.bucket,
         path,
-        byteRange: range);
+        range: range);
   }
 
   /**
@@ -229,16 +282,14 @@ class RemoteFile extends RemoteEntry {
   Future<RemoteFile> copyTo(RemoteFile file) {
     return file.exists().then((result) {
       if (result) throw new FilesystemError.destinationExists(path);
-      return metadata().then((mdata) {
       return filesystem.connection.copyObject(
           filesystem.bucket,
           this.path,
           file.filesystem.bucket,
-          path,
-          selector: 'name');
+          file.path,
+          params: {'fields': 'name'});
       })
-      .then((obj) => new RemoteFile(filesystem, obj.name));
-    });
+      .then((obj) => new RemoteFile(file.filesystem, obj.name));
   }
 
   /**
@@ -266,33 +317,8 @@ class RemoteFile extends RemoteEntry {
       .then((_) => this);
 
   Future<int> get length =>
-      filesystem.connection.getObject(filesystem.bucket, path, selector: "size")
+      filesystem.connection.getObject(filesystem.bucket, path, params: {'fields': 'size'})
       .then((result) => result.size);
 
   String toString() => "RemoteFile: $path";
 }
-
-bool _isFolderPath(String path) => path.endsWith(_FS_DELIMITER);
-
-
-/**
- * A path is a '/' sepearated list of components, each of which cannot
- * be empty and which cannot contain a whitespace character
- */
-final Pattern _VALID_PATH = new RegExp(r'/[^\s/](/[^\s/]|)*/?$');
-
-
-void _checkValidFolderPath(String path) {
-  if (_VALID_PATH.matchAsPrefix(path) == null)
-    throw new PathError.invalidPath(path);
-  if (!_isFolderPath(path))
-    throw new PathError.invalidFolder(path);
-}
-
-void _checkValidFilePath(String path) {
-  if (_VALID_PATH.matchAsPrefix(path) == null)
-    throw new PathError.invalidPath(path);
-  if (_isFolderPath(path))
-    throw new PathError.invalidFile(path);
-}
-

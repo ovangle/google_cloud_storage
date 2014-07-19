@@ -14,11 +14,12 @@ import 'package:quiver/async.dart';
 
 import 'api/api.dart';
 import 'connection/connection.dart';
+import 'connection/rpc.dart';
 import 'source/source_common.dart';
 import 'utils/content_range.dart';
 import 'utils/http_utils.dart';
 
-part 'fs/src/entry.dart';
+part 'fs/entry.dart';
 
 const _FS_DELIMITER = "/";
 
@@ -50,13 +51,50 @@ class CloudFilesystem {
    */
   final String bucket;
 
+  /**
+   * The folder at the root of the filesystem
+   */
+  RemoteFolder get root => new RemoteFolder(this, '/');
+
   CloudFilesystem(this.connection, String this.bucket);
 
-  //A cached version of the bucket at the root of the filesystem.
-  StorageBucket _cachedBucket;
-
+  /**
+   * Get the metadata associated with the bucket at the root of this
+   * filesystem
+   */
   Future<StorageBucket> metadata() =>
       connection.getBucket(bucket);
+
+  /**
+   * Test whether the filesystem exists on storage
+   */
+  Future<bool> exists() =>
+      connection.getBucket(bucket, params: {'fields': 'name'})
+        .then((_) => true)
+        .catchError(
+            (err) => false,
+            test: (err) => err is RpcException && err.statusCode == 404
+        );
+
+  /**
+   * Create the filesystem in storage.
+   * Completes with a [FilesystemError] if the bucket at the root of
+   * the filesystem already exists.
+   */
+  Future<CloudFilesystem> create() {
+    return exists().then((exists) {
+      if (exists) {
+        throw new FilesystemError.rootExists(bucket);
+      }
+      return connection.createBucket(bucket, params: {'fields': 'name'});
+    }).then((_) => this);
+  }
+
+  /**
+   * Delete the filesystem from storage
+   */
+  Future delete() =>
+      connection.deleteBucket(bucket);
 }
 
 class PathError extends Error {
@@ -65,17 +103,13 @@ class PathError extends Error {
 
   PathError(this.msg, this.path);
 
-  PathError.invalidPath(String path):
-    this("Path must be specified as $_FS_DELIMITER delimited list of non-empty components.\n"
-          "and cannot contain a whitespace character", path);
-
   PathError.invalidFolder(String path):
-    this("Folder name must end with $_FS_DELIMITER", path);
+    this("Folder path must match ${RemoteFolder.FOLDER_PATH.pattern}", path);
 
   PathError.invalidFile(String path):
-    this("File name cannot end with $_FS_DELIMITER", path);
+    this("File path must match ${RemoteFile.FILE_PATH.pattern}", path);
 
-  String toString() => "$msg: $path";
+  String toString() => "Invalid path ($path): $msg";
 
 }
 
@@ -84,6 +118,9 @@ class FilesystemError extends Error {
   final String message;
 
   FilesystemError(this.errCode, this.message);
+
+  FilesystemError.rootExists(String bucket):
+    this(4, "Bucket already exists");
 
   FilesystemError.noRootExists(String bucket):
     this(0, "Bucket at root of filesystem ($bucket) does not exist on the remote storage");
