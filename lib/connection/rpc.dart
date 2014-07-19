@@ -271,6 +271,8 @@ class RpcException {
   final http.Response response;
   final String message;
 
+  int get statusCode => response.statusCode;
+
   RpcException(this.message, this.response);
 
   RpcException.invalidStatus(http.Response response):
