@@ -1,3 +1,15 @@
+version 0.3.1
+=============
+
+features
+    - Testing library, exposes a mock connection object
+    - Added `statusCode` getter to `RpcException`
+    - Added `range` optional parameter to downloadObject
+
+bugfixes
+    - Reconciled fs library with breaking changes to connection objects
+
+
 version 0.3.0+1
 ===============
 
