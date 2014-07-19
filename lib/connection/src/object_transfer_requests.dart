@@ -9,7 +9,7 @@ const int _BUFFER_SIZE = 5 * 1024 * 1024;
 
 abstract class ObjectTransferRequests implements ObjectRequests {
 
-  Stream<List<int>> downloadObject(String bucket, String object, { Map<String, String> params: const {} }) {
+  Stream<List<int>> downloadObject(String bucket, String object, { Range range: null, Map<String, String> params: const {} }) {
 
     object = _urlEncode(object);
     StreamController controller = new StreamController<List<int>>();
@@ -17,7 +17,11 @@ abstract class ObjectTransferRequests implements ObjectRequests {
     params = new Map.from(params);
     params.putIfAbsent('alt', () => 'media');
 
-    var uploadRpc = new RpcRequest("/b/$bucket/o/$object", headers: { HttpHeaders.RANGE: range.toString() },
+    var headers = new Map();
+    if (range != null)
+      headers['content-range'] = range.toString();
+
+    var uploadRpc = new RpcRequest("/b/$bucket/o/$object", headers: headers,
         query: params);
 
     _client.sendHttp(uploadRpc).then((http.StreamedResponse response) {
