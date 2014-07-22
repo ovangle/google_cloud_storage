@@ -94,8 +94,13 @@ abstract class RemoteEntry {
    */
   Future<RemoteEntry> delete({bool recursive: false});
 
-  bool operator ==(Object other) => other is RemoteEntry && other.path == path;
-  int get hashCode => path.hashCode * 7;
+
+  bool operator ==(Object other) =>
+      other is RemoteEntry &&
+      other.filesystem == filesystem &&
+      other.path == path;
+
+  int get hashCode => qcore.hash2(filesystem, path);
 }
 
 

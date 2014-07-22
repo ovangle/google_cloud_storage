@@ -10,6 +10,7 @@ library fs;
 
 import 'dart:async';
 
+import 'package:quiver/core.dart' as qcore;
 import 'package:quiver/async.dart';
 
 import 'api/api.dart';
@@ -95,6 +96,14 @@ class CloudFilesystem {
    */
   Future delete() =>
       connection.deleteBucket(bucket);
+
+  bool operator ==(Object other) {
+    return other is CloudFilesystem && other.bucket == bucket;
+  }
+
+  int get hashCode => bucket.hashCode;
+
+  String toString() => 'Filesystem ($bucket)';
 }
 
 class PathError extends Error {
