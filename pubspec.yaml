@@ -1,5 +1,5 @@
 name: google_cloud_storage
-version: 0.3.1-pre1
+version: 0.3.1-pre2
 authors:
 - Thomas Stephenson <ovangle@gmail.com>
 - Marko Vuksanovic <markovuksanovic@gmail.com>
@@ -8,6 +8,7 @@ homepage: https://github.com/ovangle/google_cloud_storage
 dependencies:
   collection: '>=0.9.0 <0.10.0'
   google_oauth2_client: '>=0.3.7 <0.4.0'
+  logging: '>=0.9.1 <0.10.0'
   quiver: '>=0.18.2 <0.19.0'
 dev_dependencies:
   browser: any
