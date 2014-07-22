@@ -152,36 +152,24 @@ class RemoteFolder extends RemoteEntry {
 
   /**
    * Create the folder if it does not exist.
-   *
-   * If [:recursive:] is `true` then the parent object of the [RemoteFolder] will
-   * be created. Otherwise the future completes with a [FilesystemError]
-   * if the parent does not exist.
    */
-  Future<RemoteFolder> create({recursive: false}) {
+  Future<RemoteFolder> create() {
     return exists().then((exists) {
       if (exists) {
-        return this;
+        return null;
       } else {
-        return parent.exists().then((parentExists) {
-          if (!parentExists) {
-            if (recursive)
-              return parent.create(recursive: true);
-            throw new FilesystemError.noSuchFolderOrFile(parent.path);
-          }
-        })
-        .then((_) {
-          var source = new ByteSource([], 'text/plain');
+        var source = new ByteSource([], 'text/plain');
 
-          return filesystem.connection
-              .uploadObject(
-                  filesystem.bucket,
-                  path,
-                  source,
-                  params: {'fields': 'name'}
-              );
-        }).then((resumeToken) => resumeToken.done);
+        return filesystem.connection
+            .uploadObject(
+                filesystem.bucket,
+                path,
+                source,
+                params: {'fields': 'name'}
+            )
+            .then((resumeToken) => resumeToken.done);
       }
-    });
+    }).then((_) => this);
   }
 
   /**
@@ -207,6 +195,7 @@ class RemoteFolder extends RemoteEntry {
     .then((_) => filesystem.connection.deleteObject(filesystem.bucket, path))
     .then((_) => this);
   }
+
 
   String toString() => "Folder: $path";
 }
