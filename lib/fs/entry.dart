@@ -31,6 +31,11 @@ abstract class RemoteEntry {
   RemoteFolder get parent;
 
   /**
+   * The name of the metadata object
+   */
+  String get _objectName => path.substring(1);
+
+  /**
    * The name of the entry within the parent folder
    */
   String get name => path.substring(parent.path.length);
@@ -39,7 +44,7 @@ abstract class RemoteEntry {
     if (path == _FS_DELIMITER) return new Future.value(true);
     return filesystem.connection.getObject(
         filesystem.bucket,
-        path,
+        _objectName,
         params: {'fields':'name'})
     .then((result) => true)
     .catchError(
@@ -60,7 +65,7 @@ abstract class RemoteEntry {
   Future<String> getEntryProperty(String key, {orElse()}) =>
       filesystem.connection.getObject(
          filesystem.bucket,
-         path,
+         _objectName,
          params: {'fields': 'metadata($key)'})
       .then((object) {
         if (object.metadata != null && object.metadata.containsKey(key))
@@ -72,7 +77,7 @@ abstract class RemoteEntry {
   Future setEntryProperty(String key, String value) {
     return filesystem.connection.patchObject(
         filesystem.bucket,
-        path,
+        _objectName,
         (object) => object.metadata[key] = value,
         params: {'fields': 'metadata'}
     );
@@ -85,9 +90,7 @@ abstract class RemoteEntry {
    * Note: The metadata of the root of the filesystem is always `null`.
    */
   Future<StorageObject> metadata() =>
-      path == _FS_DELIMITER
-          ? new Future.value()
-          : filesystem.connection.getObject(filesystem.bucket, path);
+      filesystem.connection.getObject(filesystem.bucket, _objectName);
 
   /**
    * Delete the [RemoteEntry].
@@ -120,6 +123,12 @@ class RemoteFolder extends RemoteEntry {
   RemoteFolder.fromParentAndName(RemoteFolder parent, String name):
     this(parent.filesystem, parent.path + name);
 
+  RemoteFolder.fromObject(Connection connection, StorageObject obj):
+    this(
+        new CloudFilesystem(connection, obj.bucket),
+        '/' + obj.name
+    );
+
   RemoteFolder get parent {
     if (path == _FS_DELIMITER) {
       return this;
@@ -136,7 +145,7 @@ class RemoteFolder extends RemoteEntry {
   Stream<RemoteEntry> list() {
     return filesystem.connection.listObjects(
         filesystem.bucket,
-        params: {'prefix': path.substring(1), 'delimiter': _FS_DELIMITER }
+        params: {'prefix': _objectName, 'delimiter': _FS_DELIMITER }
     )
     .map((prefixOrObject) =>
         prefixOrObject.fold(
@@ -144,7 +153,7 @@ class RemoteFolder extends RemoteEntry {
             ifRight: (obj) => new RemoteEntry(filesystem, '/' + obj.name)
         )
     )
-    .where((obj) => obj != this);
+    .where((entry) => entry.name != _objectName);
   }
 
 
@@ -163,7 +172,7 @@ class RemoteFolder extends RemoteEntry {
         return filesystem.connection
             .uploadObject(
                 filesystem.bucket,
-                path,
+                _objectName,
                 source,
                 params: {'fields': 'name'}
             )
@@ -183,11 +192,7 @@ class RemoteFolder extends RemoteEntry {
     return isEmpty.then((result) {
       if (!result) {
         if (recursive) {
-          return list().toList()
-              .then((entries) => forEachAsync(
-                  entries,
-                  (entry) => entry.delete(recursive: true))
-              );
+          return list().forEach((entry) => entry.delete(recursive: recursive));
         }
         throw new FilesystemError.folderNotEmpty(path);
       }
@@ -206,7 +211,6 @@ class RemoteFolder extends RemoteEntry {
 class RemoteFile extends RemoteEntry {
   static final RegExp FILE_PATH = new RegExp(r'(/[^\s/]+)+$');
 
-
   RemoteFile(filesystem, path):
       super._(filesystem, path)  {
     if (FILE_PATH.matchAsPrefix(path) == null)
@@ -215,9 +219,6 @@ class RemoteFile extends RemoteEntry {
 
   RemoteFile.fromParentAndName(RemoteFolder parent, String name):
     this(parent.filesystem, parent.path + name);
-
-  RemoteFile._from(RemoteFile file):
-    super._(file.filesystem, file.path);
 
   RemoteFolder get parent =>
       new RemoteFolder(
@@ -236,7 +237,7 @@ class RemoteFile extends RemoteEntry {
   Future<RemoteFile> write(Source source) {
     return filesystem.connection.uploadObject(
         filesystem.bucket,
-        path,
+        _objectName,
         source,
         params: {'fields': 'name'}
     ).then((resumeToken) => this);
@@ -259,7 +260,7 @@ class RemoteFile extends RemoteEntry {
     }
     return filesystem.connection.downloadObject(
         filesystem.bucket,
-        path,
+        _objectName,
         range: range);
   }
 
@@ -278,9 +279,9 @@ class RemoteFile extends RemoteEntry {
       if (result) throw new FilesystemError.destinationExists(path);
       return filesystem.connection.copyObject(
           filesystem.bucket,
-          this.path,
+          _objectName,
           file.filesystem.bucket,
-          file.path,
+          file._objectName,
           params: {'fields': 'name'});
       })
       .then((obj) => new RemoteFile(file.filesystem, obj.name));
@@ -297,7 +298,8 @@ class RemoteFile extends RemoteEntry {
   Future<RemoteFile> moveTo(RemoteFile file) {
     return copyTo(file)
         .then((file) {
-          return delete().then((_) => file);
+          return this.delete()
+              .then((_) => file);
         });
   }
 
@@ -307,7 +309,7 @@ class RemoteFile extends RemoteEntry {
   Future<RemoteFile> delete({bool recursive: false}) =>
       filesystem.connection.deleteObject(
           filesystem.bucket,
-          path)
+          _objectName)
       .then((_) => this);
 
   Future<int> get length =>
