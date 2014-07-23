@@ -15,6 +15,17 @@ export 'api/api.dart';
 export 'source/source_client.dart';
 export 'connection/rpc.dart' show RpcException;
 
+
+/**
+ * A connection to the cloud storage server.
+ *
+ * This method is not intended to be used directly. Instead, once a connection
+ * has been established, a [Filesystem] can be created from the connection and
+ * the bucket name, which provides more familiar, filesystem like access to
+ * objects on storage.
+ *
+ * For more details and a full example, see `example/server_storage.dart`
+ */
 class CloudStorageConnection extends base.Connection {
 
   /**

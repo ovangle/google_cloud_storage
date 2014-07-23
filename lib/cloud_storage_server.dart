@@ -4,7 +4,7 @@
  *
  * Requires access to a service account authorised to connect to
  * a remote instance of the cloud storage library or to be run from
- * a compute engine instance
+ * a compute engine instance.
  */
 library file_storage;
 
@@ -12,7 +12,6 @@ import 'dart:async';
 import 'dart:io';
 import 'package:google_oauth2_client/google_oauth2_console.dart' as oauth2;
 import 'package:http/http.dart' as http;
-import 'package:logging/logging.dart' as logging;
 
 import 'api/api.dart';
 import 'connection/connection.dart';
@@ -21,9 +20,20 @@ import 'connection/rpc.dart';
 import "package:json_web_token/json_web_token.dart";
 
 export 'api/api.dart';
-export 'connection/connection.dart';
 export 'source/source_server.dart';
+export 'connection/rpc.dart' show RpcException;
+export 'fs/fs.dart';
 
+/**
+ * A connection to the cloud storage server.
+ *
+ * This method is not intended to be used directly. Instead, once a connection
+ * has been established, a [Filesystem] can be created from the connection and
+ * the bucket name, which provides more familiar, filesystem like access to
+ * objects on storage.
+ *
+ * For more details and a full example, see `example/server_storage.dart`
+ */
 class CloudStorageConnection extends Connection {
 
   /**

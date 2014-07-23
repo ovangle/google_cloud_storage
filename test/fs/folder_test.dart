@@ -4,8 +4,8 @@ import 'dart:async';
 
 import 'package:unittest/unittest.dart';
 
-import 'package:google_cloud_storage/fs.dart';
-import 'package:google_cloud_storage/testing.dart';
+import 'package:google_cloud_storage/fs/fs.dart';
+import 'package:google_cloud_storage/testing/testing_common.dart';
 
 void main() {
   group("folder", () {
@@ -14,7 +14,7 @@ void main() {
     setUp(() {
       var connection = new MockConnection();
       return connection.createBucket('fs-bucket').then((bucket) {
-        filesystem = new CloudFilesystem(
+        filesystem = new Filesystem(
             connection,
             'fs-bucket');
       });

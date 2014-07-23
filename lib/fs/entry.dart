@@ -5,7 +5,7 @@ part of fs;
  */
 abstract class RemoteEntry {
 
-  final CloudFilesystem filesystem;
+  final Filesystem filesystem;
   final String path;
 
   /**
@@ -13,7 +13,7 @@ abstract class RemoteEntry {
    * If [:path:] ends with '/', a folder will be created
    * otherwise a file
    */
-  factory RemoteEntry(CloudFilesystem filesystem, String path) {
+  factory RemoteEntry(Filesystem filesystem, String path) {
     return (RemoteFolder.FOLDER_PATH.matchAsPrefix(path) != null)
         ? new RemoteFolder(filesystem, path)
         : new RemoteFile(filesystem, path);
@@ -125,7 +125,7 @@ class RemoteFolder extends RemoteEntry {
 
   RemoteFolder.fromObject(Connection connection, StorageObject obj):
     this(
-        new CloudFilesystem(connection, obj.bucket),
+        new Filesystem(connection, obj.bucket),
         '/' + obj.name
     );
 

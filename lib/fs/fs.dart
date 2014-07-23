@@ -11,21 +11,20 @@ library fs;
 import 'dart:async';
 
 import 'package:quiver/core.dart' as qcore;
-import 'package:quiver/async.dart';
 
-import 'api/api.dart';
-import 'connection/connection.dart';
-import 'connection/rpc.dart';
-import 'source/source_common.dart';
-import 'utils/content_range.dart';
-import 'utils/http_utils.dart';
+import '../api/api.dart';
+import '../connection/connection.dart';
+import '../connection/rpc.dart';
+import '../source/source_common.dart';
+import '../utils/content_range.dart';
+import '../utils/http_utils.dart';
 
-part 'fs/entry.dart';
+part 'entry.dart';
 
 const _FS_DELIMITER = "/";
 
 /**
- * A [CloudFilesystem] is a virtual filesystem which is overlayed over
+ * A [Filesystem] is a virtual filesystem which is overlayed over
  * the contents of a particular bucket which exists on the cloud storage
  * servers.
  *
@@ -41,7 +40,7 @@ const _FS_DELIMITER = "/";
  * - Not contain a whitespace character
  * - Not contain an empty component.
  */
-class CloudFilesystem {
+class Filesystem {
   /**
    * A connection to the cloud storage which holds metadata
    * about the
@@ -57,7 +56,7 @@ class CloudFilesystem {
    */
   RemoteFolder get root => new RemoteFolder(this, '/');
 
-  CloudFilesystem(this.connection, String this.bucket);
+  Filesystem(this.connection, String this.bucket);
 
   /**
    * Get the metadata associated with the bucket at the root of this
@@ -82,7 +81,7 @@ class CloudFilesystem {
    * Completes with a [FilesystemError] if the bucket at the root of
    * the filesystem already exists.
    */
-  Future<CloudFilesystem> create() {
+  Future<Filesystem> create() {
     return exists().then((exists) {
       if (exists) {
         throw new FilesystemError.rootExists(bucket);
@@ -98,7 +97,7 @@ class CloudFilesystem {
       connection.deleteBucket(bucket);
 
   bool operator ==(Object other) {
-    return other is CloudFilesystem && other.bucket == bucket;
+    return other is Filesystem && other.bucket == bucket;
   }
 
   int get hashCode => bucket.hashCode;
@@ -144,6 +143,4 @@ class FilesystemError extends Error {
     this(3, "Copy/move destination exists");
 
   String toString() => "Filesystem error ($errCode): $message";
-
-
 }

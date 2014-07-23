@@ -5,16 +5,16 @@ import 'dart:async';
 import 'package:http/http.dart' as http;
 import 'package:quiver/async.dart' show forEachAsync;
 
-import 'api/api.dart';
-import 'connection/rpc.dart';
-import 'connection/connection.dart';
-import 'connection/resume_token.dart';
-import 'source/source_common.dart';
-import 'utils/either.dart';
-import 'utils/content_range.dart';
+import '../api/api.dart';
+import '../connection/rpc.dart';
+import '../connection/connection.dart';
+import '../connection/resume_token.dart';
+import '../source/source_common.dart';
+import '../utils/either.dart';
+import '../utils/content_range.dart';
 
-export 'api/api.dart';
-export 'source/source_common.dart';
+export '../api/api.dart';
+export '../source/source_common.dart';
 
 
 /**
