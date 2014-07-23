@@ -136,12 +136,12 @@ class RemoteFolder extends RemoteEntry {
   Stream<RemoteEntry> list() {
     return filesystem.connection.listObjects(
         filesystem.bucket,
-        params: {'prefix': path, 'delimiter': _FS_DELIMITER }
+        params: {'prefix': path.substring(1), 'delimiter': _FS_DELIMITER }
     )
     .map((prefixOrObject) =>
         prefixOrObject.fold(
-            ifLeft: (prefix) => new RemoteFolder(filesystem, prefix),
-            ifRight: (obj) => new RemoteEntry(filesystem, obj.name)
+            ifLeft: (prefix) => new RemoteFolder(filesystem, '/' + prefix),
+            ifRight: (obj) => new RemoteEntry(filesystem, '/' + obj.name)
         )
     )
     .where((obj) => obj != this);
