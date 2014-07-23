@@ -1,8 +1,13 @@
-version 0.3.1
+version 0.4.0
 =============
 
+breaking changes
+    - In fs library, CloudFilesystem renamed to Filesystem
+    - fs.dart library now no longer available as separate import
+
 features
-    - Testing library, exposes a mock connection object
+    - Testing library (lib/testing/testing_server.dart and lib/testing/testing_client.dart),
+        exposes a mock connection object
     - Added `statusCode` getter to `RpcException`
     - Added `range` optional parameter to downloadObject
 
