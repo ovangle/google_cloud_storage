@@ -160,23 +160,20 @@ class RemoteFolder extends RemoteEntry {
   Future<bool> get isEmpty => list().isEmpty;
 
   /**
-   * Create the folder if it does not exist.
+   * Create the folder *if it does not exist*.
+   *
+   * Returns silently if the folder already exists.
    */
   Future<RemoteFolder> create() {
     return exists().then((exists) {
-      if (exists) {
-        return null;
-      } else {
-        var source = new ByteSource([], 'text/plain');
-
+      if (!exists) {
         return filesystem.connection
-            .uploadObject(
+            .uploadObjectSimple(
                 filesystem.bucket,
                 _objectName,
-                source,
+                new ByteSource([], 'text/plain'),
                 params: {'fields': 'name'}
-            )
-            .then((resumeToken) => resumeToken.done);
+            );
       }
     }).then((_) => this);
   }
