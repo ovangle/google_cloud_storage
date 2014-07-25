@@ -27,6 +27,7 @@ class ContentRange {
     }
   }
 
+  /// The range set. If `null`, this is a query to determine an unknown range.
   final Range range;
   final int length;
 
@@ -70,7 +71,8 @@ class Range {
   final int hi;
 
   int get size => (hi + 1) - lo;
-  bool get isEmpty => lo == hi;
+  bool get isEmpty => lo > hi;
+  bool get isNotEmpty => !isEmpty;
 
   Range(this.lo, this.hi) {
     if (lo == null || hi == null)
