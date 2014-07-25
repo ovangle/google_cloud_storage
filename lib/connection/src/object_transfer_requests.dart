@@ -204,4 +204,87 @@ abstract class ObjectTransferRequests implements ObjectRequests {
         completer: completer
     );
   }
+
+
+  /**
+   * Upload an object using the multipart/related upload API. This can be
+   * slightly more efficient than using the resumable upload API for small
+   * files (<5MB in size) but the upload must be retried in full on failure.
+   *
+   * This method automatically sets the `uploadType` parameter to `'multipart'`
+   */
+  Future<StorageObject> uploadObjectMultipart(
+      String bucket,
+      var /* String | StorageObject */ object,
+      Source source,
+      { Map<String, String> params: const {} }
+  ) {
+    return source.read(source.length).then((bytes) {
+      if (object is String) {
+        object = new StorageObject(bucket, object, selector: 'bucket,name');
+      } else if (object is! StorageObject) {
+        throw new ArgumentError('Expected a `String` or `StorageObject`');
+      }
+
+      //Set the upload type to 'resumable'
+      params = new Map.from(params);
+      params['uploadType'] = 'multipart';
+
+      var uploadRpc = new MultipartRelatedRpcRequest(
+          "/b/$bucket/o",
+          method: "POST",
+          query: params,
+          isUploadRequest: true);
+
+      uploadRpc.requestParts
+              ..add(new RpcRequestPart(_JSON_CONTENT)..jsonBody = object)
+              ..add(new RpcRequestPart(source.contentType)..bodyBytes = bytes);
+
+      return _client.send(uploadRpc)
+          .then(
+              (response) {
+                if (response.statusCode < 200 || response.statusCode >= 300)
+                  throw new RpcException.invalidStatus(response);
+                return new StorageObject.fromJson(response.jsonBody);
+              });
+    });
+  }
+
+  /**
+   * Upload the object using the simple API media upload API.
+   *
+   * This method automatically sets the `uploadType` parameter to `media`
+   */
+  Future<StorageObject> uploadObjectSimple(
+      String bucket,
+      String object,
+      Source source,
+      { Map<String,String> params: const {} }) {
+    return source.read(source.length).then((bytes) {
+
+      params = new Map.from(params)
+          ..['uploadType'] = 'media'
+          ..['name'] = object;
+
+      var headers = new Map<String,String>()
+          ..['content-type'] = source.contentType;
+
+      var uploadRpc = new RpcRequest(
+          '/b/$bucket/o',
+          method: 'POST',
+          query: params,
+          isUploadRequest: true,
+          headers: headers
+      );
+
+
+      return _client.send(uploadRpc)
+          .then(
+              (response) {
+                if (response.statusCode < 200 || response.statusCode >= 300)
+                  throw new RpcException.invalidStatus(response);
+                return new StorageObject.fromJson(response.jsonBody);
+              });
+    });
+  }
 }
