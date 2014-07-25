@@ -154,8 +154,10 @@ abstract class ObjectTransferRequests implements ObjectRequests {
     Completer<RpcResponse> completer = new Completer();
     var request = new StreamedRpcRequest(token.uploadUri, method: 'PUT')
         ..headers.putIfAbsent('content-type', () => source.contentType)
-        ..headers['content-range'] = contentRange.toString()
         ..headers['content-length'] = contentLength.toString();
+
+    if (contentRange.range.isNotEmpty)
+      request.headers['content-range'] = contentRange.toString();
 
     completeWithResponse(RpcResponse response) {
       if (completer.isCompleted) return;
