@@ -290,9 +290,10 @@ class RemoteFile extends RemoteEntry {
           _objectName,
           file.filesystem.bucket,
           file._objectName,
-          params: {'fields': 'name'});
+          params: {'fields': 'name'}
+      );
       })
-      .then((obj) => new RemoteFile(file.filesystem, obj.name));
+      .then((obj) => new RemoteFile(file.filesystem, '/' + obj.name));
   }
 
   /**

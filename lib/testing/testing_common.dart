@@ -160,21 +160,15 @@ class MockConnection implements Connection {
     }
 
     @override
-    Future<StorageObject> copyObject(String sourceBucket, String sourceObject, String destinationBucket, destinationObject, {Map<String, String> params: const {}}) {
+    Future<StorageObject> copyObject(String sourceBucket, String sourceObject, String destinationBucket, String destinationObject, {Map<String, String> params: const {}}) {
       return _getStoredBucket(destinationBucket).then((destBucket) {
-        var destObjectName = (destinationObject is String) ? destinationObject : destinationObject.name;
-        var destObjectMetadata = (destinationObject is String)
-            ? null
-            : new StorageObject.fromJson(destinationObject.toJson());
-        if (destBucket.objects[destObjectName] != null)
-          throw 'Object $destObjectName already exists in destination bucket $destinationBucket';
+        if (destBucket.objects[destinationObject] != null)
+          throw 'Object $destinationObject already exists in destination bucket $destinationBucket';
         return _getStoredObject(sourceBucket, sourceObject).then((sourceObject) {
           var destObject = new _StoredObject()
-              ..metadata = (destObjectMetadata != null)
-                  ? destObjectMetadata
-                  : sourceObject.metadata
+              ..metadata = new StorageObject(destinationBucket, destinationObject)
               ..objectData = new List.from(sourceObject.objectData);
-          destBucket.objects[destObjectName] = destObject;
+          destBucket.objects[destinationObject] = destObject;
           return destObject.metadata;
 
         });

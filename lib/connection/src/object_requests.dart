@@ -98,30 +98,25 @@ abstract class ObjectRequests implements ConnectionBase {
       String sourceBucket,
       String sourceObject,
       String destinationBucket,
-      var /* String | StorageObject */ destinationObject,
+      String destinationObject,
       { Map<String,String> params: const {} }) {
-    return new Future.sync(() {
-      if (destinationObject is String) {
-        destinationObject = new StorageObject(destinationBucket, destinationObject, selector: 'bucket,name');
-      } else if (destinationObject is! StorageObject) {
-        throw new ArgumentError("Expected a String or StorageObject");
-      }
+        return new Future.sync(() {
 
-      Map<String,String> headers = new Map<String,String>()
-          ..[HttpHeaders.CONTENT_TYPE] = _JSON_CONTENT;
+          Map<String,String> headers = new Map<String,String>()
+              ..[HttpHeaders.CONTENT_TYPE] = _JSON_CONTENT;
 
-      sourceObject = _urlEncode(sourceObject);
-      var destObject = _urlEncode(destinationObject.name);
 
-      return _remoteProcedureCall(
-          "/b/$sourceBucket/o/$sourceObject/copyTo/b/$destinationBucket/o/$destObject",
-          method: "POST",
-          headers: headers,
-          query: params,
-          body: destinationObject);
+          sourceObject = _urlEncode(sourceObject);
+          var destObject = _urlEncode(destinationObject);
 
-    }).then((response) => new StorageObject.fromJson(response.jsonBody, selector: params['fields']));
+          return _remoteProcedureCall(
+              "/b/$sourceBucket/o/$sourceObject/copyTo/b/$destinationBucket/o/$destObject",
+              method: "POST",
+              headers: headers,
+              query: params
+          );
 
+        }).then((response) => new StorageObject.fromJson(response.jsonBody, selector: params['fields']));
   }
 
   /**
