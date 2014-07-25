@@ -97,6 +97,8 @@ abstract class BucketRequests implements ConnectionBase {
         }
       }
 
+      params.putIfAbsent('project', () => projectId);
+
       _checkValidBucketName(bucket.name);
 
       var headers = new Map<String,String>()
