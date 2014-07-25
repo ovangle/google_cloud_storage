@@ -40,7 +40,7 @@ packages:
   http_parser:
     description: http_parser
     source: hosted
-    version: "0.0.2+3"
+    version: "0.0.2+4"
   json_web_token:
     description: json_web_token
     source: hosted
@@ -48,15 +48,15 @@ packages:
   logging:
     description: logging
     source: hosted
-    version: "0.9.1+1"
+    version: "0.9.1+2"
   matcher:
     description: matcher
     source: hosted
-    version: "0.10.1+1"
+    version: "0.11.0"
   mock:
     description: mock
     source: hosted
-    version: "0.11.0+1"
+    version: "0.11.0+2"
   oauth2:
     description: oauth2
     source: hosted
@@ -64,7 +64,7 @@ packages:
   path:
     description: path
     source: hosted
-    version: "1.2.1"
+    version: "1.2.2"
   quiver:
     description: quiver
     source: hosted
@@ -73,10 +73,10 @@ packages:
     description: rsa_pkcs
     source: hosted
     version: "0.1.1"
-  source_maps:
-    description: source_maps
+  source_span:
+    description: source_span
     source: hosted
-    version: "0.9.3"
+    version: "1.0.0"
   stack_trace:
     description: stack_trace
     source: hosted
@@ -84,8 +84,8 @@ packages:
   string_scanner:
     description: string_scanner
     source: hosted
-    version: "0.0.3"
+    version: "0.1.0"
   unittest:
     description: unittest
     source: hosted
-    version: "0.11.0+2"
+    version: "0.11.0+3"

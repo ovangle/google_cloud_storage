@@ -3,16 +3,21 @@ version 0.4.0
 
 breaking changes
     - In fs library, CloudFilesystem renamed to Filesystem
-    - fs.dart library now no longer available as separate import
+    - fs.dart library now no longer available as separate import (exported with server and client libs)
+    - copyTo no longer accepts `StorageObject` as a destination object argument
+        - Google cloud no longer supported it
 
 features
     - Testing library (lib/testing/testing_server.dart and lib/testing/testing_client.dart),
         exposes a mock connection object
     - Added `statusCode` getter to `RpcException`
     - Added `range` optional parameter to downloadObject
+    - uploadObjectSimple and uploadObjectMultipart requests available on CloudStorageConnection object
+    - createBucket now adds 'project' parameter automatically if not provided
 
 bugfixes
     - Reconciled fs library with breaking changes to connection objects
+    - copyTo sends an empty content
 
 
 version 0.3.0+1

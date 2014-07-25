@@ -1,8 +1,9 @@
 name: google_cloud_storage
-version: 0.4.0-pre1
+version: 0.4.0-pre2
 authors:
-- Thomas Stephenson <ovangle@gmail.com>
-- Marko Vuksanovic <markovuksanovic@gmail.com>
+  - Thomas Stephenson <ovangle@gmail.com>
+  - Marko Vuksanovic <markovuksanovic@gmail.com>
+  - Martin Flucka <martflu@gmail.com>
 description: A library for connecting, and interacting with the google cloud storage API
 homepage: https://github.com/ovangle/google_cloud_storage
 dependencies:
