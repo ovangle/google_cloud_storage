@@ -4,6 +4,7 @@ library file_test;
 import 'package:unittest/unittest.dart';
 import 'package:google_cloud_storage/testing/testing_common.dart';
 import 'package:google_cloud_storage/fs/fs.dart';
+import 'package:google_cloud_storage/connection/rpc.dart';
 
 void main() {
   var filesystem;
@@ -31,6 +32,32 @@ void main() {
     test("The name of the file should be the path relative to its parent", () {
       var f = new RemoteFile(filesystem, '/folder1/file1.txt');
       expect(f.name, 'file1.txt');
+    });
+  });
+
+  group('copy', () {
+    test("It should be possible to copy a file", () {
+      var source = new RemoteFile(filesystem, '/source.jpg');
+      return source.write(new StringSource('foo', 'text/plain'))
+          .then((RemoteFile file) {
+            var destination = new RemoteFile(filesystem, '/parent/destination.jpg');
+            return source.copyTo(destination);
+          })
+          .then((RemoteFile file) {
+            expect(file.parent.name, 'parent/');
+            expect(file.name, 'destination.jpg');
+          });
+    });
+    test("Copy should fail if the destination file is not existing", () {
+      var source = new RemoteFile(filesystem, '/source.jpg');
+      var destination = new RemoteFile(filesystem, '/destination.jpg');
+      return source.copyTo(destination)
+          .then((RemoteFile file) {
+            expect(true, isFalse);
+          })
+          .catchError((error) {
+            expect(error is RpcException, isTrue);
+          });
     });
   });
 }
