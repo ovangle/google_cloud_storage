@@ -230,9 +230,17 @@ class RemoteFile extends RemoteEntry {
    *
    * The file content is read from the given [Source].
    * [:contentType:] is the mime type of the source.
+   *
+   * If [:useMultipart:] is true, the object will be uploaded using the
+   * multipart request API. This is slightly more efficient for small files
+   * if the method succeeds, but less efficient if the request needs to be
+   * retried (since the entire source needs to be reuploaded).
    */
-  Future<RemoteFile> write(Source source) {
-    return filesystem.connection.uploadObject(
+  Future<RemoteFile> write(Source source, {bool useMultipart: false}) {
+    var upload = (useMultipart)
+        ? filesystem.connection.uploadObjectMultipart
+        : filesystem.connection.uploadObject;
+    return upload(
         filesystem.bucket,
         _objectName,
         source,
@@ -242,6 +250,9 @@ class RemoteFile extends RemoteEntry {
 
   /**
    * Reads the content of the file
+   *
+   * NOTE: At the moment, reading a range from a file returns a `NotImplemented`
+   * error from the google cloud storage server
    */
   Stream<List<int>> read([int start_or_end, int end]) {
     Range range = null;
