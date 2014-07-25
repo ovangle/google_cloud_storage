@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:convert' show JSON, UTF8;
 import 'dart:math' as math;
 import 'dart:mirrors' as mirrors;
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
@@ -243,6 +244,72 @@ class StreamedRpcRequest extends BaseRpcRequest {
       });
     });
   }
+}
+
+class MultipartRelatedRpcRequest extends BaseRpcRequest {
+  static const String _BOUNDARY = 'multipart_boundary';
+
+  MultipartRelatedRpcRequest(
+      dynamic /* String | Uri */ endpoint,
+      { String method: "GET",
+        Map<String,String> query: const {},
+        bool isUploadRequest: false,
+        Map<String, String> headers
+      }):
+      super(
+          endpoint,
+          method: method,
+          isUploadRequest: isUploadRequest,
+          headers: headers
+      );
+
+  List <RpcRequestPart> requestParts = [];
+
+
+  List<int> get _bodyBytes {
+    List<int> bytes = new List<int>();
+    for (var part in requestParts) {
+      bytes
+          ..addAll(UTF8.encode('--multipart_boundary\r\n'))
+          ..addAll(UTF8.encode('content-type: ${part.contentType}\r\n'))
+          ..addAll(UTF8.encode('\r\n'))
+          ..addAll(part.bodyBytes)
+          ..addAll(UTF8.encode('\r\n'));
+    }
+    bytes..addAll(UTF8.encode('--$_BOUNDARY--\r\n'));
+    return bytes;
+  }
+
+
+  @override
+  http.Request asRequest({String baseUrl: BASE_URL, String apiVersion: API_VERSION}) {
+    headers['content-type'] = 'multipart/related; boundary="$_BOUNDARY"';
+    var req = new http.Request(method, requestUrl(baseUrl: baseUrl, apiVersion: apiVersion));
+    req.headers.addAll(headers);
+    req.bodyBytes = _bodyBytes;
+    return req;
+  }
+}
+
+/**
+ * Part of a [MultipartRelatedRpcRequest]
+ */
+class RpcRequestPart {
+  final String contentType;
+  List<int> bodyBytes;
+
+  RpcRequestPart(this.contentType);
+
+  String get body => UTF8.decode(bodyBytes);
+  set body(String value) {
+    bodyBytes = UTF8.encode(value);
+  }
+
+  Map<String,dynamic> get jsonBody => JSON.decode(body);
+  set jsonBody(dynamic value) {
+    body = JSON.encode(value);
+  }
+
 }
 
 class RpcResponse implements http.Response {
