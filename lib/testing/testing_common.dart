@@ -256,6 +256,18 @@ class MockConnection implements Connection {
   String get projectId => null;
 
 
+
+  @override
+  Future<StorageObject> uploadObjectMultipart(String bucket, object, Source source, {Map<String, String> params: const {}}) {
+    return uploadObject(bucket, object, source, params: params)
+        .then((token) => token.done);
+  }
+
+  @override
+  Future<StorageObject> uploadObjectSimple(String bucket, String object, Source source, {Map<String, String> params: const {}}) {
+    return uploadObject(bucket, object, source, params: params)
+        .then((token) => token.done);
+  }
 }
 
 class _StoredBucket {
