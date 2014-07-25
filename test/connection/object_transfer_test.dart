@@ -34,6 +34,7 @@ void main() {
                         headers: { 'location': 'http://example.com' }));
         } else {
           return bodyStream.expand((i) => i).toList().then(expectAsync((bytes) {
+            expect(request.headers['content-range'], 'bytes 0-25/26');
             expect(bytes, UTF8.encode("abcdefghijklmnopqrstuvwxyz"));
           })).then((_) {
             Iterable<int> stream = UTF8.encode(JSON.encode({'bucket':'bucket', 'name':'object'}));
@@ -60,6 +61,52 @@ void main() {
           expect(so.name, 'object');
         }));
       }));
+    });
+
+    test("should not include 'content-range' header with empty upload", () {
+      var requestCount = 0;
+      Future<http.StreamedResponse> streamHandler(http.BaseRequest request, http.ByteStream bodyStream) {
+        if (requestCount++ == 0) {
+          expect(request.headers['X-Upload-Content-Length'], '0');
+
+          return bodyStream.expand((i) => i).toList().then((bytes) =>
+              expect(JSON.decode(UTF8.decode(bytes)), {
+                'bucket': 'bucket', 'name': 'object', 'metadata': { 'hello':'world' }})).then((_) =>
+                    new http.StreamedResponse(new Stream.fromIterable([]), 200,
+                        headers: { 'location': 'http://example.com' }));
+        } else {
+          return bodyStream.expand((i) => i).toList().then(expectAsync((bytes) {
+            expect(bytes, UTF8.encode(""));
+            expect(request.headers['content-range'], isNull);
+          })).then((_) {
+            Iterable<int> stream = UTF8.encode(JSON.encode({'bucket':'bucket', 'name':'object'}));
+            return new http.StreamedResponse(
+                new Stream.fromIterable([stream]),
+                200,
+                headers: {'content-type' : 'application/json; charset=UTF-8'}
+            );
+          });
+        }
+      }
+
+      var connection = new Connection(
+          'proj_id',
+          new MockRpcClient(streamHandler)
+      );
+
+      var obj = new StorageObject("bucket", "object")
+                ..metadata['hello'] = 'world';
+      var src = new StringSource("", 'text/plain');
+
+      return connection.uploadObject("bucket", obj, src).then((resumeToken) {
+        expect(resumeToken.uploadUri, Uri.parse("http://example.com"));
+        expect(resumeToken.range, null);
+        expect(resumeToken.done != null, true);
+        return resumeToken.done.then((StorageObject so) {
+          expect(so.bucket, 'bucket');
+          expect(so.name, 'object');
+        });
+      });
     });
 
     test("upload should retry an upload with a RETRY status", () {
