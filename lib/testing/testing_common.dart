@@ -99,7 +99,20 @@ class MockConnection implements Connection {
     Future<ResumeToken> uploadObject(String bucket, object, Source source, {Map<String, String> params: const {}}) {
       return _getStoredBucket(bucket).then((storedBucket) {
         var metadata = (object is String) ? new StorageObject(bucket, object) : new StorageObject.fromJson(object.toJson());
+
+
+
         var objectName = (object is String) ? object : object.name;
+
+        //Add any default object acl from the bucket.
+        for (var defaultObjectAcl in storedBucket.metadata.defaultObjectAcl) {
+          var objectAcl = new ObjectAccessControls.fromJson(
+              defaultObjectAcl.toJson()
+                  ..['object'] = objectName
+          );
+          metadata.acl.add(objectAcl);
+        }
+
         var storedObject = new _StoredObject()
             ..metadata = metadata;
         if (storedBucket.objects[objectName] != null) {
