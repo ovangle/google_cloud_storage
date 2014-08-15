@@ -14,6 +14,7 @@ features
     - Added `range` optional parameter to downloadObject
     - uploadObjectSimple and uploadObjectMultipart requests available on CloudStorageConnection object
     - createBucket now adds 'project' parameter automatically if not provided
+    - ObjectAccessControls and BucketAccessControls now have unnamed constructors
 
 bugfixes
     - Reconciled fs library with breaking changes to connection objects
