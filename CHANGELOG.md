@@ -1,3 +1,9 @@
+version 0.4.1-pre1
+==================
+
+features
+    - Added 'downloadUrl' getter to RemoteFile
+
 version 0.4.0
 =============
 
