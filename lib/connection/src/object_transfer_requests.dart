@@ -14,11 +14,16 @@ abstract class ObjectTransferRequests implements ObjectRequests {
     params = new Map.from(params);
     params.putIfAbsent('alt', () => 'media');
 
+    object = _urlEncode(object);
+
     var uploadRpc = new RpcRequest("/b/$bucket/o/$object", query: params);
     return uploadRpc.requestUrl();
   }
 
   Stream<List<int>> downloadObject(String bucket, String object, { Range range: null, Map<String, String> params: const {} }) {
+
+    if (range != null)
+      throw new UnsupportedError('Download range is not yet supported by google storage');
 
     object = _urlEncode(object);
     StreamController controller = new StreamController<List<int>>();
