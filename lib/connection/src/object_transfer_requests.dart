@@ -9,6 +9,15 @@ const int _BUFFER_SIZE = 5 * 1024 * 1024;
 
 abstract class ObjectTransferRequests implements ObjectRequests {
 
+  Uri downloadUrl(String bucket, String object, {Map<String,String> params: const {}}) {
+
+    params = new Map.from(params);
+    params.putIfAbsent('alt', () => 'media');
+
+    var uploadRpc = new RpcRequest("/b/$bucket/o/$object", query: params);
+    return uploadRpc.requestUrl();
+  }
+
   Stream<List<int>> downloadObject(String bucket, String object, { Range range: null, Map<String, String> params: const {} }) {
 
     object = _urlEncode(object);

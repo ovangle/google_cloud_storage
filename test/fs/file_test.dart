@@ -35,6 +35,13 @@ void main() {
     });
   });
 
+  group('download', () {
+    test("should be able to get the download url of a file", () {
+      var f = new RemoteFile(filesystem, '/test-file.txt');
+      expect(f.url, Uri.parse('https://www.googleapis.com/storage/v1/b/fs-bucket/o/test-file.txt?alt=media'));
+    });
+  });
+
   group('copy', () {
     test("It should be possible to copy a file", () {
       var source = new RemoteFile(filesystem, '/source.jpg');

@@ -223,6 +223,13 @@ class RemoteFile extends RemoteEntry {
           path.substring(0, path.lastIndexOf(_FS_DELIMITER) + 1)
       );
 
+  /**
+   * Return a url representing the download location of the object.
+   */
+  Uri get downloadUrl =>
+    filesystem.connection.downloadUrl(filesystem.bucket, this._objectName);
+
+
 
   /**
    * writes the [RemoteFile] to the server, overwriting any existing

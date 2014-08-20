@@ -275,6 +275,15 @@ class MockConnection implements Connection {
     return uploadObject(bucket, object, source, params: params)
         .then((token) => token.done);
   }
+
+  @override
+  Uri downloadUrl(String bucket, String object, {Map<String, String> params: const {}}) {
+    params = new Map.from(params);
+    params.putIfAbsent('alt', () => 'media');
+
+    var uploadRpc = new RpcRequest("/b/$bucket/o/$object", query: params);
+    return uploadRpc.requestUrl();
+  }
 }
 
 class _StoredBucket {
